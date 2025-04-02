@@ -114,16 +114,11 @@ impl HexSystem {
     /// The order is NW, NE, E, SE, SW, W
     ///
     ///
-    fn get_connected_islands(columns: usize, rows: usize, from: usize) -> [Option<usize>; 6] {
+    const fn get_connected_islands(columns: usize, rows: usize, from: usize) -> [Option<usize>; 6] {
         let mut connections = [None; 6];
-        let mut first_column = 0;
-        let mut last_column = columns - 1;
-        let mut even_row = true;
-        while last_column < from {
-            first_column += columns + if even_row { 0 } else { 1 };
-            last_column += columns + if even_row { 1 } else { 0 };
-            even_row = !even_row;
-        }
+        let even_row = from % (2 * columns + 1) < columns;
+        let first_column = from - from % (2 * columns + 1) + if even_row { 0 } else { columns };
+        let last_column = first_column + columns - 1 + if even_row { 0 } else { 1 };
         // Starting from second row
         if from >= columns {
             if even_row || from != first_column {
@@ -252,15 +247,21 @@ impl HexSystem {
             }
             cur_index = final_index;
         }
-        assert!(islands.iter().flat_map(|i| i).filter(|i| blank_indices.contains(i)).count() == 0);
+        assert!(
+            islands
+                .iter()
+                .flatten()
+                .filter(|i| blank_indices.contains(i))
+                .count()
+                == 0
+        );
         islands
     }
 
     ///
-    /// 
-    /// 
+    ///
+    ///
     fn crop(islands: &mut Vec<Island>, max_columns: usize) -> (usize, usize) {
-
         (0, 0)
     }
 }
