@@ -260,6 +260,7 @@ impl HexSystem {
     /// 
     /// 
     fn crop(islands: &mut Vec<Island>, max_columns: usize) -> (usize, usize) {
+
         (0, 0)
     }
 }
