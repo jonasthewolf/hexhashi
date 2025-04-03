@@ -1,5 +1,4 @@
 
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -10,7 +9,6 @@ use leptos_router::path;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use reactive_stores::Store;
 
 use crate::game::Game;
 
@@ -115,15 +113,11 @@ struct StartGameArgs {
 // }
 
 
-#[derive(Clone, Debug, Default, Store)]
-struct GlobalState {
-    games: HashMap<Difficulty, Option<HexSystem>>,
-}
 
 #[component]
 pub fn App() -> impl IntoView {
     // let (name, set_name) = signal(String::new());
-    let (_, start_game) = signal(Difficulty::Easy);
+    // let (_, start_game) = signal(Difficulty::Easy);
 
     // let update_name = move |ev| {
     //     let v = event_target_value(&ev);
@@ -147,36 +141,25 @@ pub fn App() -> impl IntoView {
 
     view! {
         <main class="container">
-            
             <Router>
-            <Routes fallback=|| "Not found.">
-                <Route path=path!("/") view=GameStart/>
-                <Route path=path!("/play/:difficulty") view=Game/>
-            </Routes>
+                <Routes fallback=|| "Not found.">
+                    <Route path=path!("/") view=GameStart/>
+                    <Route path=path!("/play/:difficulty") view=Game/>
+                </Routes>
             </Router>
-                </main>
-            }
-            // <Game />
+        </main>
+    }
 }
 
 #[component]
 pub fn GameStart() -> impl IntoView {
-    let (_, start_game) = signal(Difficulty::Easy);
     view! {
-            <div class="row">
-                <img src="public/hexhashi.svg" class="logo hexhashi" alt="hexhashi logo"/>
-            </div>
+            <img src="public/hexhashi.svg" class="logo hexhashi" alt="hexhashi logo"/>
             <h1>"hexhashi"</h1>
             <p>"Select difficulty level to start game."</p>
-            <button
-            onclick="location.href='/play/easy'">Easy</button>
-            <button
-            on:click=move |_| start_game.set(Difficulty::Medium)>Medium</button>
-            <button
-            on:click=move |_| start_game.set(Difficulty::Hard)>Hard</button>
-            <button
-            on:click=move |_| start_game.set(Difficulty::Extreme)>Extreme</button>
+            <button onclick="location.href='/play/easy'">Easy</button>
+            <button onclick="location.href='/play/medium'">Medium</button>
+            <button onclick="location.href='/play/hard'">Hard</button>
+            <button onclick="location.href='/play/extreme'">Extreme</button>
     }
-            // <Game />
-    
 }
