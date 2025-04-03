@@ -1,6 +1,6 @@
 pub type Island = Option<usize>;
 
-#[derive(Debug, PartialEq, PartialOrd, Eq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq)]
 pub enum BridgeState {
     Empty,
     Partial,

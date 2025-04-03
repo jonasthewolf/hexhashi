@@ -7,7 +7,7 @@ use rand::prelude::*;
 
 use crate::hashi::{Bridge, BridgeState, CoordinateSystem, Island};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HexBridge {
     state: BridgeState,
 }
@@ -18,7 +18,7 @@ pub struct HexBridge {
 /// 0 is top left
 /// All even rows have one more column.
 ///
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HexSystem {
     columns: usize,
     islands: Vec<Island>,
@@ -29,7 +29,6 @@ impl Display for HexSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut even_row = true;
         let mut last_end_index = self.columns - 1;
-        dbg!(last_end_index);
         f.write_fmt(format_args!(
             "\u{250f}{:\u{2501}<width$}\u{2513}\n",
             "",
@@ -186,12 +185,6 @@ impl HexSystem {
             let bridge_width = rng.random_range(1..=2);
             let mut final_index = next_connections[direction].unwrap(); // unwrap ok, since only valid direction is chosen.
 
-            dbg!(cur_index);
-            dbg!(direction);
-            dbg!(bridge_length);
-            dbg!(bridge_width);
-            dbg!(&blank_indices);
-
             // Keep direction until any of the following applies:
             // a) direction is not available anymore (basically edge is hit), or
             // b) `bridge_length` is reached, or
@@ -201,31 +194,25 @@ impl HexSystem {
             loop {
                 // a)
                 let Some(next_index) = next_connections[direction] else {
-                    dbg!("a)");
                     break;
                 };
                 final_index = next_index;
                 bridge_length -= 1;
                 // b)
                 if bridge_length == 0 {
-                    dbg!("b)");
                     break;
                 }
                 let already_island = islands[next_index].is_some();
-                dbg!(already_island);
                 // c)
                 if already_island {
-                    dbg!("c)");
                     break;
                 }
                 // d)
                 if blank_indices.contains(&next_index) {
-                    dbg!("d)");
                     break;
                 }
                 // Mark island as blank.
                 if orig_bridge_length > 1 {
-                    dbg!("blank");
                     blank_indices.push(next_index);
                 }
 
@@ -391,6 +378,13 @@ mod test {
     #[test]
     fn small_hashi() {
         let hex = HexSystem::generate_new(1, 4, 5, 8, 3, 0.0, 0.0);
+        // dbg!(&hex);
+        println!("{}", hex);
+    }
+
+    #[test]
+    fn medium_hashi() {
+        let hex = HexSystem::generate_new(1, 15, 15, 28, 7, 0.0, 0.0);
         // dbg!(&hex);
         println!("{}", hex);
     }
