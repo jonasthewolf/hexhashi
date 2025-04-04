@@ -19,7 +19,7 @@
 
 .container {
   margin: 0;
-  padding-top: 10vh;
+  /* padding-top: 10vh; */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -91,9 +91,6 @@ button {
   outline: none;
 }
 
-#greet-input {
-  margin-right: 5px;
-}
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -115,6 +112,7 @@ button {
   }
 }
 
-canvas {
-  object-fit: contain
+
+.menu {
+  margin-left: 35%;
 }
