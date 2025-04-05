@@ -76,24 +76,18 @@ impl HexSystem {
         _ratio_big_island: f64,
         _ratio_long_bridge: f64,
     ) -> Self {
-        let size = HexSystem::get_size(max_columns, max_rows);
 
-        let rng = SmallRng::seed_from_u64(seed);
-
-        let (islands, bridges) = HexSystem::generate_islands(
+        let (islands, bridges, (columns, rows)) = HexSystem::generate_islands(
             max_columns,
             max_rows,
             num_islands,
             max_bridge_length,
-            size,
-            rng,
+            seed
         );
 
-        // TODO crop to minimum necessary size
-
         HexSystem {
-            columns: max_columns,
-            rows: max_rows,
+            columns,
+            rows,
             islands,
             bridges,
         }
@@ -170,9 +164,13 @@ impl HexSystem {
         max_rows: usize,
         num_islands: usize,
         max_bridge_length: usize,
-        size: usize,
-        mut rng: SmallRng,
-    ) -> (Vec<Island>, BTreeMap<(usize, usize), HexBridge>) {
+        seed: u64,
+    ) -> (Vec<Island>, BTreeMap<(usize, usize), HexBridge>, (usize, usize)) {
+        let size = HexSystem::get_size(max_columns, max_rows);
+
+        let mut rng = SmallRng::seed_from_u64(seed);
+
+
         #[derive(Clone, Debug, PartialEq, Eq)]
         enum GenIsland {
             Blank,
@@ -204,15 +202,6 @@ impl HexSystem {
             // b) `bridge_length` is reached, or
             // c) an existing island is reached, or
             // d) the bridge is blocked (i.e. the index is marked as blocked).
-            // dbg!(start_index);
-            // {
-            //     let even_row = start_index % (2 * max_columns + 1) < max_columns;
-            //     let row = 2 * (start_index / (2 * max_columns + 1)) + if even_row { 0 } else { 1 };
-            //     let column =
-            //         start_index % (2 * max_columns + 1) - if even_row { 0 } else { max_columns };
-            // dbg!(row, column);
-            // }
-            // dbg!(direction);
             let mut next_index = start_index;
             // Loop terminates at latest, when bridge length is reached.
             let end_index = loop {
@@ -273,7 +262,7 @@ impl HexSystem {
         }
         // TODO Fill bridges between existing islands that do not contribute to solution.
         // Create islands from bridges
-        let mut islands = vec![None; indices.len()];
+        let mut islands: Vec<Island> = vec![None; indices.len()];
         bridges.iter_mut().for_each(|((i1, i2), bw)| {
             let mut apply = |i: usize| {
                 let is = islands[i].get_or_insert(0);
@@ -287,20 +276,21 @@ impl HexSystem {
             apply(*i1);
             apply(*i2);
         });
-        (islands, bridges)
+        let new_size = HexSystem::crop(&mut islands, max_columns, max_rows);
+        (islands, bridges, new_size)
     }
 
     ///
+    /// Returns the new size (columns, rows)
     ///
-    ///
-    fn crop(islands: &mut Vec<Island>, max_columns: usize) -> (usize, usize) {
-        (0, 0)
+    fn crop(islands: &mut Vec<Island>, max_columns: usize, max_rows: usize) -> (usize, usize) {
+        // TODO Implement
+        (max_columns, max_rows)
     }
 }
 impl CoordinateSystem for HexSystem {
     ///
     /// Get connected islands for `from` island.
-    /// TODO Vorbedingung: Kanten dürfen nicht mehr auf "Leere Inseln" zeigen.
     ///
     fn get_connected_islands(&self, from: usize) -> Vec<usize> {
         self.bridges
@@ -367,7 +357,7 @@ impl CoordinateSystem for HexSystem {
                 }
             })
             .all(|(index, target)| target == self.get_actual_bridges(index))
-            && self.bridges.values().all(|b| b.state == b.target)
+            && self.bridges.values().all(|b| b.state == b.target) // TODO remove again, since solution might not be unambiguous
     }
 }
 
