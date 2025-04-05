@@ -228,7 +228,7 @@ impl HexSystem {
                 bridge_length -= 1;
                 // dbg!(bridge_length);
                 // b), c) and d)
-                if bridge_length == 0 || indices[next_index] != None {
+                if bridge_length == 0 || indices[next_index].is_some() {
                     // dbg!(next_index);
                     break next_index;
                 }
@@ -248,7 +248,7 @@ impl HexSystem {
                         std::cmp::max(start_index, end_index),
                     ))
                     .and_modify(|e| {
-                        (*e).target = match e.target {
+                        e.target = match e.target {
                             BridgeState::Empty => unreachable!(),
                             BridgeState::Partial => BridgeState::Full,
                             BridgeState::Full => BridgeState::Full,

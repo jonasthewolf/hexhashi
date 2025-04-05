@@ -209,7 +209,7 @@ fn draw_grid(
     for index in 0..game.islands.len() {
         let (start_x, start_y) = get_coordinates_from_index(game, index);
         let connections = HexSystem::get_connected_indices(game.columns, game.rows, index);
-        for c in connections.into_iter().filter_map(|c| c) {
+        for c in connections.into_iter().flatten() {
             let (end_x, end_y) = get_coordinates_from_index(game, c);
             ctx.begin_path();
             ctx.move_to(start_x, start_y);
