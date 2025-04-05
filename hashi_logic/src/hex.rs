@@ -5,10 +5,11 @@ use std::{
 
 use rand::prelude::*;
 
-use crate::hashi::{ActualIsland, Bridge, BridgeState, CoordinateSystem, Island};
+use crate::hashi::{Bridge, BridgeState, CoordinateSystem, Island};
 
 #[derive(Clone, Debug)]
 pub struct HexBridge {
+    target: BridgeState,
     state: BridgeState,
 }
 
@@ -21,6 +22,7 @@ pub struct HexBridge {
 #[derive(Clone, Debug)]
 pub struct HexSystem {
     pub columns: usize,
+    pub rows: usize,
     pub islands: Vec<Island>,
     pub bridges: BTreeMap<(usize, usize), HexBridge>,
 }
@@ -42,7 +44,7 @@ impl Display for HexSystem {
                 }
             }
             if let Some(island) = &self.islands[index] {
-                f.write_fmt(format_args!("{}", island.target_bridges))?;
+                f.write_fmt(format_args!("{}", island))?;
             } else {
                 f.write_str(" ")?;
             }
@@ -91,6 +93,7 @@ impl HexSystem {
 
         HexSystem {
             columns: max_columns,
+            rows: max_rows,
             islands,
             bridges: BTreeMap::new(),
         }
@@ -166,89 +169,118 @@ impl HexSystem {
         size: usize,
         mut rng: SmallRng,
     ) -> Vec<Island> {
-        let mut islands: Vec<Island> = vec![None; size];
-        let mut blank_indices = vec![];
-        let mut cur_index = rng.random_range(0..size);
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        enum GenIsland {
+            Blank,
+            Created,
+        }
+
+        let mut indices = vec![None; HexSystem::get_size(max_columns, max_rows)];
+        let mut start_index = rng.random_range(0..size);
+        indices[start_index] = Some(GenIsland::Created);
+        let mut bridges: BTreeMap<(usize, usize), HexBridge> = BTreeMap::new();
+
+        let mut limit = 50;
 
         // Randomly walk a tour on the grid randomly selecting direction, width and length of bridge
-        while islands.iter().filter(|i| i.is_some()).count() < num_islands {
-            let mut next_connections =
-                HexSystem::get_connected_islands(max_columns, max_rows, cur_index);
-            let direction = next_connections
-                .iter()
-                .enumerate()
-                .filter_map(|(i, x)| if x.is_some() { Some(i) } else { None })
-                .choose(&mut rng)
-                .unwrap(); // unwrap ok, since, there is always a theoretical connection to the next island.
+        while indices
+            .iter()
+            .filter(|i| matches!(i, Some(GenIsland::Created)))
+            .count()
+            < num_islands && limit > 0
+        {
+            let direction = rng.random_range(0..6);
             let mut bridge_length = rng.random_range(1..=max_bridge_length);
             let orig_bridge_length = bridge_length;
             let bridge_width = rng.random_range(1..=2);
-            let mut final_index = next_connections[direction].unwrap(); // unwrap ok, since only valid direction is chosen.
 
             // Keep direction until any of the following applies:
             // a) direction is not available anymore (basically edge is hit), or
             // b) `bridge_length` is reached, or
-            // c) an island is reached.
-            // d) the bridge is blocked (i.e. the edge is marked as blocked), or
-
-            loop {
+            // c) an existing island is reached, or
+            // d) the bridge is blocked (i.e. the index is marked as blocked).
+            dbg!(start_index);
+            {
+                let even_row = start_index % (2 * max_columns + 1) < max_columns;
+                let row = 2 * (start_index / (2 * max_columns + 1)) + if even_row { 0 } else { 1 };
+                let column =
+                    start_index % (2 * max_columns + 1) - if even_row { 0 } else { max_columns };
+                dbg!(row, column);
+            }
+            dbg!(direction);
+            let mut next_index = start_index;
+            // Loop terminates at latest, when bridge length is reached.
+            let end_index = loop {
+                let next_connections =
+                    HexSystem::get_connected_islands(max_columns, max_rows, next_index);
                 // a)
-                let Some(next_index) = next_connections[direction] else {
-                    break;
+                if let Some(i) = next_connections[direction] {
+                    next_index = i;
+                } else {
+                    dbg!(next_index);
+                    break next_index;
                 };
-                final_index = next_index;
                 bridge_length -= 1;
-                // b)
-                if bridge_length == 0 {
-                    break;
-                }
-                let already_island = islands[next_index].is_some();
-                // c)
-                if already_island {
-                    break;
-                }
-                // d)
-                if blank_indices.contains(&next_index) {
-                    break;
+                dbg!(bridge_length);
+                // b), c) and d)
+                if bridge_length == 0 || indices[next_index] != None {
+                    dbg!(next_index);
+                    break next_index;
                 }
                 // Mark island as blank.
                 if orig_bridge_length > 1 {
-                    blank_indices.push(next_index);
+                    dbg!(orig_bridge_length);
+                    indices[next_index] = Some(GenIsland::Blank);
                 }
-
-                next_connections =
-                    HexSystem::get_connected_islands(max_columns, max_rows, next_index);
-            }
-            // It can happen that an index is marked as blank, but ends up as the final index with an island created.
-            // Remove it here again.
-            if let Some(bi) = blank_indices.pop() {
-                if bi != final_index {
-                    blank_indices.push(bi); // Push it back again.
-                }
-            }
-            // Create island or increase its count of bridges
-            if let Some(i) = &mut islands[final_index] {
-                (*i).target_bridges += 1;
+                dbg!(next_index);
+            };
+            if start_index != end_index && indices[end_index] != Some(GenIsland::Blank) {
+                dbg!(start_index);
+                dbg!(end_index);
+                bridges
+                    .entry((
+                        std::cmp::min(start_index, end_index),
+                        std::cmp::max(start_index, end_index),
+                    ))
+                    .and_modify(|e| {
+                        (*e).target = match e.target {
+                            BridgeState::Empty => unreachable!(),
+                            BridgeState::Partial => BridgeState::Full,
+                            BridgeState::Full => BridgeState::Full,
+                            BridgeState::Blocked => unreachable!(),
+                        };
+                    })
+                    .or_insert(HexBridge {
+                        target: match bridge_width {
+                            1 => BridgeState::Partial,
+                            2 => BridgeState::Full,
+                            _ => unreachable!(),
+                        },
+                        state: BridgeState::Empty,
+                    });
+                indices[end_index] = Some(GenIsland::Created);
+                start_index = end_index;
             } else {
-                islands[final_index] = Some(ActualIsland {
-                    target_bridges: bridge_width,
-                    current_bridges: 0,
-                });
+                // let x = indices.iter().enumerate().filter_map(|(a,b)| if b.is_some() {Some(format!("{}:{:?}", a, b.clone().unwrap()))} else {None}).collect::<Vec<_>>();
+                // dbg!(x);
+                limit -= 1;
             }
-            cur_index = final_index;
         }
-        // FIXME assertion does not hold
-        // dbg!(&islands.iter().enumerate().filter_map(|(i, o)| if o.is_some() { Some(i) } else { None } ).collect::<Vec<_>>());
-        // dbg!(&blank_indices);
-        // assert!(
-        //     dbg!(islands
-        //         .iter()
-        //         .enumerate()
-        //         .filter_map(|(i, o)| if o.is_some() { Some(i) } else { None } )
-        //         .filter(|i| blank_indices.contains(i))
-        //         .count())
-        //         == 0
-        // );
+        // Create islands from bridges
+        let mut islands = vec![None; indices.len()];
+        bridges.iter_mut().for_each(|((i1, i2), bw)| {
+            let mut apply = |i: usize| {
+                let is = islands[i].get_or_insert(0);
+                *is += match bw.target {
+                    BridgeState::Empty => 0,
+                    BridgeState::Partial => 1,
+                    BridgeState::Full => 2,
+                    BridgeState::Blocked => 0,
+                };
+            };
+            apply(*i1);
+            apply(*i2);
+        });
         islands
     }
 
@@ -288,17 +320,25 @@ impl CoordinateSystem for HexSystem {
         let column = from % (2 * self.columns + 1) - if even_row { 0 } else { self.columns };
         (row, column)
     }
+
+    fn get_actual_bridges(&self, from: usize) -> usize {
+        let connections = HexSystem::get_connected_islands(self.columns, self.rows, from);
+        // connections.iter().map(|c| self.bridges)
+        // self.bridges
+        // .get(&(std::cmp::min(from, to), std::cmp::max(from, to))).
+        0
+    }
 }
 
 impl Bridge for HexBridge {
     fn cycle(&mut self) -> Option<usize> {
-        match self.state {
-            BridgeState::Empty => self.state = BridgeState::Partial,
-            BridgeState::Partial => self.state = BridgeState::Full,
-            BridgeState::Full => self.state = BridgeState::Empty,
-            BridgeState::Blocked => self.state = BridgeState::Blocked,
+        match self.target {
+            BridgeState::Empty => self.target = BridgeState::Partial,
+            BridgeState::Partial => self.target = BridgeState::Full,
+            BridgeState::Full => self.target = BridgeState::Empty,
+            BridgeState::Blocked => self.target = BridgeState::Blocked,
         }
-        match self.state {
+        match self.target {
             BridgeState::Empty => Some(0),
             BridgeState::Partial => Some(1),
             BridgeState::Full => Some(2),
@@ -307,7 +347,7 @@ impl Bridge for HexBridge {
     }
 
     fn get_count(&self) -> usize {
-        match self.state {
+        match self.target {
             BridgeState::Empty => 0,
             BridgeState::Partial => 1,
             BridgeState::Full => 2,
@@ -320,7 +360,7 @@ impl Bridge for HexBridge {
     }
 
     fn get_state(&self) -> &BridgeState {
-        &self.state
+        &self.target
     }
 }
 

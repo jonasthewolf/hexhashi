@@ -157,7 +157,7 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 }
 
 ///
-///
+/// TODO: DO IT COMPLETELY DIFFERENT! Draw bridges vom island to island only.
 /// TODO Draw highlights when hovered
 /// TODO Draw state of bridge
 ///
@@ -223,10 +223,11 @@ fn draw_islands(
     is_outside: Signal<bool>,
 ) {
     for (index, island) in game.islands.iter().enumerate() {
-        if let Some(real) = island {
-            let (island_color, text_color) = if real.current_bridges == 0 {
+        if let Some(target) = island {
+            let actual = game.get_actual_bridges(index);
+            let (island_color, text_color) = if actual == 0 {
                 ("white", "black")
-            } else if real.current_bridges != real.target_bridges {
+            } else if actual != *target {
                 ("lemonchiffon", "white")
             } else {
                 ("green", "white")
@@ -260,7 +261,7 @@ fn draw_islands(
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
             // ctx.fill_text(&index.to_string(), x, y).unwrap();
-            ctx.fill_text(&real.target_bridges.to_string(), x, y)
+            ctx.fill_text(&target.to_string(), x, y)
                 .unwrap();
             ctx.stroke();
         }
@@ -281,6 +282,7 @@ mod test {
     fn index_to_coordinate() {
         let sys = HexSystem {
             columns: 4,
+            rows: 5,
             islands: vec![None; 22],
             bridges: BTreeMap::new(),
         };

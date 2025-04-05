@@ -1,10 +1,7 @@
-pub type Island = Option<ActualIsland>;
-
-#[derive(Clone, Debug)]
-pub struct ActualIsland {
-    pub target_bridges: usize,
-    pub current_bridges: usize,
-}
+///
+/// Target number of bridges
+///
+pub type Island = Option<usize>;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq)]
 pub enum BridgeState {
@@ -20,6 +17,8 @@ pub trait CoordinateSystem {
     fn get_mut_bridge(&mut self, from: usize, to: usize) -> Option<&mut impl Bridge>;
 
     fn get_row_column_for_index(&self, from: usize) -> (usize, usize);
+
+    fn get_actual_bridges(&self, from: usize) -> usize;
 }
 
 pub trait Bridge {
