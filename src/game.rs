@@ -1,14 +1,24 @@
-use std::{f64::consts::PI, fmt::Display, str::FromStr};
+use std::{
+    f64::consts::PI,
+    fmt::Display,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 use hexhashi_logic::{
     hashi::{Bridge, CoordinateSystem},
     hex::HexSystem,
 };
-use leptos::{ev::click, html::Canvas, logging::log, prelude::*};
+use leptos::{
+    ev::{click, mousedown, mouseup},
+    html::Canvas,
+    logging::log,
+    prelude::*,
+};
 use leptos_router::hooks::use_params_map;
 use leptos_use::{UseMouseInElementReturn, use_event_listener, use_mouse_in_element};
 use wasm_bindgen::JsCast;
-use web_sys::CanvasRenderingContext2d;
+use web_sys::{CanvasRenderingContext2d, console::log};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Difficulty {
@@ -46,58 +56,70 @@ impl FromStr for Difficulty {
 #[component]
 pub fn Game() -> impl IntoView {
     let params = use_params_map();
-    let difficulty = move || params.read().get("difficulty");
-    log!("{:?}", difficulty());
+    let difficulty = params.read_untracked().get("difficulty");
 
-    let mut game = HexSystem::generate_new(1, 10, 10, 40, 10, 0.0, 0.0);
-
-    // let (name, set_name) = signal(String::new());
-    // let (_, start_game) = signal(Difficulty::Easy);
-
-    // let update_name = move |ev| {
-    //     let v = event_target_value(&ev);
-    //     set_name.set(v);
-    // };
-
-    // let start_game = move |ev: SubmitEvent| {
-    //     ev.prevent_default();
-    //     spawn_local(async move {
-    //         // let name = name.get_untracked();
-    //         // if name.is_empty() {
-    //         //     return;
-    //         // }
-
-    //         // let args = serde_wasm_bindgen::to_value(&StartGameArgs { difficulty: &name }).unwrap();
-    //         // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    //         // let new_msg = invoke("start_game", args).await.as_string().unwrap();
-    //         // start_game.set(new_msg);
-    //     });
-    // };
+    let game = Arc::new(RwLock::new(HexSystem::generate_new(
+        1, 10, 10, 40, 10, 0.0, 0.0,
+    )));
 
     let canvas = NodeRef::<Canvas>::new();
+    let (read_bridge, update_bridge) = signal(None);
+    let (solved, set_solved) = signal(false);
 
-    let game2 = game.clone();
-    let _ = use_event_listener(canvas, click, move |evt| {
+    let g = game.clone();
+    let _ = use_event_listener(canvas, mousedown, move |evt| {
         let x = evt.offset_x();
         let y = evt.offset_y();
-        let (from, to) = get_bridge_from_coordinates(&game, x, y);
-        if let Some(bridge) = game.get_mut_bridge(from, to) {
-            bridge.cycle();
+        // log!("click: {},{}", x, y);
+        if let Some((from, to)) = get_bridge_from_coordinates(&g.read().unwrap(), x, y) {
+            // log!("{} -> {}", from, to);
+            update_bridge.set(Some((from, to)));
+        }
+    });
+
+    let _ = use_event_listener(canvas, mouseup, move |_| {
+        update_bridge.set(None);
+    });
+
+    let g = game.clone();
+    Effect::new(move |_| {
+        if let Some((from, to)) = read_bridge.get() {
+            let mut game = g.write().unwrap();
+            if let Some(bridge) = game.get_mut_bridge(from, to) {
+                let _ = bridge.cycle();
+                set_solved.set(game.is_solved());
+            }
         }
     });
 
     Effect::new(move |_| {
-        draw(canvas, game2.clone());
+        draw(canvas, game.clone(), read_bridge);
     });
 
     view! {
         <div><span class="menu">hexhashi</span><a class="menu" href="/">Back</a></div>
 
         <canvas node_ref=canvas/>
+        <Show when=move || { solved.get() }>
+            <dialog open >
+                <p>Congratulations! </p>
+                <form method="get" action="/">
+                    <button autofocus>OK</button>
+                </form>
+            </dialog>
+        </Show>
     }
 }
 
-fn draw(canvas: NodeRef<Canvas>, game: HexSystem) {
+///
+///
+///
+///
+fn draw(
+    canvas: NodeRef<Canvas>,
+    game: Arc<RwLock<HexSystem>>,
+    bridge_change: ReadSignal<Option<(usize, usize)>>,
+) {
     // Resize to have sharp lines
     let canvas = canvas.get().unwrap();
     let rect = canvas.get_bounding_client_rect();
@@ -125,23 +147,36 @@ fn draw(canvas: NodeRef<Canvas>, game: HexSystem) {
     Effect::new(move |_| {
         ctx.clear_rect(0.0, 0.0, width, height);
 
-        draw_grid(width, height, &ctx, &game, element_x, element_y, is_outside);
+        let game = game.read().unwrap();
 
-        draw_islands(width, height, &ctx, &game, element_x, element_y, is_outside);
+        draw_grid(&ctx, &game, element_x, element_y, is_outside, bridge_change);
+
+        draw_islands(&ctx, &game, element_x, element_y, is_outside);
     });
 }
 
 const LINE_HEIGHT: f64 = 50.0;
 const ISLAND_SIZE: f64 = 15.0;
 
-fn get_index_from_coordinates(game: &HexSystem, x: i32, y: i32) -> usize {
-    0
+///
+///
+///
+///
+fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usize, usize)> {
+    for (start_index, end_index) in game.bridges.keys() {
+        let start = get_coordinates_from_index(game, *start_index);
+        let end = get_coordinates_from_index(game, *end_index);
+        if get_distance_point_line((x as f64, y as f64), start, end) < 5.0 {
+            return Some((*start_index, *end_index));
+        }
+    }
+    None
 }
 
-fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> (usize, usize) {
-    (0, 0)
-}
-
+///
+///
+///
+///
 fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
     let triangle_thigh: f64 = LINE_HEIGHT / (60.0 * PI / 180.0).sin();
     let (row, column) = game.get_row_column_for_index(index);
@@ -157,56 +192,87 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 }
 
 ///
-/// TODO: DO IT COMPLETELY DIFFERENT! Draw bridges vom island to island only.
-/// TODO Draw highlights when hovered
-/// TODO Draw state of bridge
+///
+///
 ///
 fn draw_grid(
-    width: f64,
-    height: f64,
     ctx: &CanvasRenderingContext2d,
     game: &HexSystem,
     mouse_x: Signal<f64>,
     mouse_y: Signal<f64>,
     is_outside: Signal<bool>,
+    bridge_update: ReadSignal<Option<(usize, usize)>>,
 ) {
     ctx.set_stroke_style_str("dimgrey");
     ctx.set_line_width(0.5);
-    // Draw horizontal lines
-    ctx.begin_path();
-    ctx.translate(0.0, LINE_HEIGHT).unwrap();
-    draw_lines(width, height, ctx);
-    ctx.translate(0.0, LINE_HEIGHT).unwrap();
-    ctx.stroke();
-    // Draw diagonal lines from left to right
-    ctx.begin_path();
-    ctx.translate(width * 0.5, height * 0.5).unwrap();
-    ctx.rotate(60.0 * PI / 180.0).unwrap();
-    ctx.translate(-width * 0.5, -height * 0.5).unwrap();
-    draw_lines(width, height, ctx);
-    ctx.stroke();
-    // Reset
-    ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0).unwrap();
-    // Draw diagonal lines from right to left
-    ctx.begin_path();
-    ctx.translate(width * 0.5, height * 0.5).unwrap();
-    ctx.rotate(-60.0 * PI / 180.0).unwrap();
-    ctx.translate(-width * 0.5, -height * 0.5).unwrap();
-    draw_lines(width, height, ctx);
-    ctx.stroke();
-    // Reset
-    ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0).unwrap();
+    // Draw grid
+    for index in 0..game.islands.len() {
+        let (start_x, start_y) = get_coordinates_from_index(game, index);
+        let connections = HexSystem::get_connected_indices(game.columns, game.rows, index);
+        for c in connections.into_iter().filter_map(|c| c) {
+            let (end_x, end_y) = get_coordinates_from_index(game, c);
+            ctx.begin_path();
+            ctx.move_to(start_x, start_y);
+            ctx.line_to(end_x, end_y);
+            ctx.stroke();
+        }
+    }
+    // Draw actual bridges
+    for ((start_index, end_index), bridge) in &game.bridges {
+        let start = get_coordinates_from_index(game, *start_index);
+        let end = get_coordinates_from_index(game, *end_index);
+        ctx.begin_path();
+        match bridge.get_state() {
+            hexhashi_logic::hashi::BridgeState::Empty => {}
+            hexhashi_logic::hashi::BridgeState::Partial => {
+                ctx.set_line_width(3.0);
+                ctx.set_stroke_style_str("dodgerblue");
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+            }
+            hexhashi_logic::hashi::BridgeState::Full => {
+                ctx.set_line_width(10.0);
+                ctx.set_stroke_style_str("dodgerblue");
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+                ctx.stroke();
+                ctx.begin_path();
+                ctx.set_stroke_style_str("dimgrey");
+                ctx.set_line_width(2.5);
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+            }
+            hexhashi_logic::hashi::BridgeState::Blocked => {}
+        }
+        ctx.stroke();
+    }
+    // Draw hovering
+    let point = (mouse_x.get(), mouse_y.get());
+    if !is_outside.get() {
+        for (start_index, end_index) in game.bridges.keys() {
+            let start = get_coordinates_from_index(game, *start_index);
+            let end = get_coordinates_from_index(game, *end_index);
+            if bridge_update.get() != Some((*start_index, *end_index))
+                && get_distance_point_line(point, start, end) < 5.0
+            {
+                ctx.begin_path();
+                ctx.set_line_width(3.0);
+                ctx.set_stroke_style_str("darkseagreen");
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+                ctx.stroke();
+            }
+        }
+    }
 }
 
 ///
+/// Get distance between `point` and line defined by `start` and `end` points.
 ///
-///
-///
-fn draw_lines(width: f64, height: f64, ctx: &CanvasRenderingContext2d) {
-    for line in (-height as i32..2 * height as i32).skip(1) {
-        ctx.move_to(-width, line as f64 * LINE_HEIGHT);
-        ctx.line_to(width, line as f64 * LINE_HEIGHT);
-    }
+fn get_distance_point_line(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> f64 {
+    ((end.1 - start.1) * point.0 - (end.0 - start.0) * point.1 + end.0 * start.1 - end.1 * start.0)
+        .abs()
+        / ((end.1 - start.1).powf(2.0) + (end.0 - start.0).powf(2.0)).sqrt()
 }
 
 ///
@@ -214,8 +280,6 @@ fn draw_lines(width: f64, height: f64, ctx: &CanvasRenderingContext2d) {
 ///
 ///
 fn draw_islands(
-    width: f64,
-    height: f64,
     ctx: &CanvasRenderingContext2d,
     game: &HexSystem,
     mouse_x: Signal<f64>,
@@ -228,7 +292,7 @@ fn draw_islands(
             let (island_color, text_color) = if actual == 0 {
                 ("white", "black")
             } else if actual != *target {
-                ("lemonchiffon", "white")
+                ("gold", "dimgray")
             } else {
                 ("green", "white")
             };
@@ -241,7 +305,7 @@ fn draw_islands(
             ctx.set_stroke_style_str("transparent");
             ctx.stroke();
             // log!("{} {} {}", mouse_x.get(), mouse_y.get(), is_outside.get());
-            // Order of the two "ifs" is important here: If it was different, there is no update when moved within element.
+            // Order of the two conditions is important here: If it was different, there is no update when moved within element.
             if ((x - mouse_x.get()).powf(2.0) + (y - mouse_y.get()).powf(2.0)).sqrt() <= ISLAND_SIZE
                 && !is_outside.get()
             {
@@ -261,8 +325,7 @@ fn draw_islands(
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
             // ctx.fill_text(&index.to_string(), x, y).unwrap();
-            ctx.fill_text(&target.to_string(), x, y)
-                .unwrap();
+            ctx.fill_text(&target.to_string(), x, y).unwrap();
             ctx.stroke();
         }
     }

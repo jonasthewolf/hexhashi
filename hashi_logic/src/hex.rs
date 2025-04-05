@@ -80,7 +80,7 @@ impl HexSystem {
 
         let rng = SmallRng::seed_from_u64(seed);
 
-        let islands = HexSystem::generate_islands(
+        let (islands, bridges) = HexSystem::generate_islands(
             max_columns,
             max_rows,
             num_islands,
@@ -95,7 +95,7 @@ impl HexSystem {
             columns: max_columns,
             rows: max_rows,
             islands,
-            bridges: BTreeMap::new(),
+            bridges,
         }
     }
 
@@ -116,7 +116,11 @@ impl HexSystem {
     /// The order is NW, NE, E, SE, SW, W
     ///
     ///
-    const fn get_connected_islands(columns: usize, rows: usize, from: usize) -> [Option<usize>; 6] {
+    pub const fn get_connected_indices(
+        columns: usize,
+        rows: usize,
+        from: usize,
+    ) -> [Option<usize>; 6] {
         let mut connections = [None; 6];
         let even_row = from % (2 * columns + 1) < columns;
         let first_column = from - from % (2 * columns + 1) + if even_row { 0 } else { columns };
@@ -168,7 +172,7 @@ impl HexSystem {
         max_bridge_length: usize,
         size: usize,
         mut rng: SmallRng,
-    ) -> Vec<Island> {
+    ) -> (Vec<Island>, BTreeMap<(usize, usize), HexBridge>) {
         #[derive(Clone, Debug, PartialEq, Eq)]
         enum GenIsland {
             Blank,
@@ -187,7 +191,8 @@ impl HexSystem {
             .iter()
             .filter(|i| matches!(i, Some(GenIsland::Created)))
             .count()
-            < num_islands && limit > 0
+            < num_islands
+            && limit > 0
         {
             let direction = rng.random_range(0..6);
             let mut bridge_length = rng.random_range(1..=max_bridge_length);
@@ -199,44 +204,44 @@ impl HexSystem {
             // b) `bridge_length` is reached, or
             // c) an existing island is reached, or
             // d) the bridge is blocked (i.e. the index is marked as blocked).
-            dbg!(start_index);
-            {
-                let even_row = start_index % (2 * max_columns + 1) < max_columns;
-                let row = 2 * (start_index / (2 * max_columns + 1)) + if even_row { 0 } else { 1 };
-                let column =
-                    start_index % (2 * max_columns + 1) - if even_row { 0 } else { max_columns };
-                dbg!(row, column);
-            }
-            dbg!(direction);
+            // dbg!(start_index);
+            // {
+            //     let even_row = start_index % (2 * max_columns + 1) < max_columns;
+            //     let row = 2 * (start_index / (2 * max_columns + 1)) + if even_row { 0 } else { 1 };
+            //     let column =
+            //         start_index % (2 * max_columns + 1) - if even_row { 0 } else { max_columns };
+            // dbg!(row, column);
+            // }
+            // dbg!(direction);
             let mut next_index = start_index;
             // Loop terminates at latest, when bridge length is reached.
             let end_index = loop {
                 let next_connections =
-                    HexSystem::get_connected_islands(max_columns, max_rows, next_index);
+                    HexSystem::get_connected_indices(max_columns, max_rows, next_index);
                 // a)
                 if let Some(i) = next_connections[direction] {
                     next_index = i;
                 } else {
-                    dbg!(next_index);
+                    // dbg!(next_index);
                     break next_index;
                 };
                 bridge_length -= 1;
-                dbg!(bridge_length);
+                // dbg!(bridge_length);
                 // b), c) and d)
                 if bridge_length == 0 || indices[next_index] != None {
-                    dbg!(next_index);
+                    // dbg!(next_index);
                     break next_index;
                 }
                 // Mark island as blank.
                 if orig_bridge_length > 1 {
-                    dbg!(orig_bridge_length);
+                    // dbg!(orig_bridge_length);
                     indices[next_index] = Some(GenIsland::Blank);
                 }
-                dbg!(next_index);
+                // dbg!(next_index);
             };
             if start_index != end_index && indices[end_index] != Some(GenIsland::Blank) {
-                dbg!(start_index);
-                dbg!(end_index);
+                // dbg!(start_index);
+                // dbg!(end_index);
                 bridges
                     .entry((
                         std::cmp::min(start_index, end_index),
@@ -262,10 +267,11 @@ impl HexSystem {
                 start_index = end_index;
             } else {
                 // let x = indices.iter().enumerate().filter_map(|(a,b)| if b.is_some() {Some(format!("{}:{:?}", a, b.clone().unwrap()))} else {None}).collect::<Vec<_>>();
-                // dbg!(x);
+                // // dbg!(x);
                 limit -= 1;
             }
         }
+        // TODO Fill bridges between existing islands that do not contribute to solution.
         // Create islands from bridges
         let mut islands = vec![None; indices.len()];
         bridges.iter_mut().for_each(|((i1, i2), bw)| {
@@ -281,7 +287,7 @@ impl HexSystem {
             apply(*i1);
             apply(*i2);
         });
-        islands
+        (islands, bridges)
     }
 
     ///
@@ -299,7 +305,15 @@ impl CoordinateSystem for HexSystem {
     fn get_connected_islands(&self, from: usize) -> Vec<usize> {
         self.bridges
             .iter()
-            .filter_map(|((island, other), _)| if island == &from { Some(*other) } else { None })
+            .filter_map(|((island, other), _)| {
+                if island == &from {
+                    Some(*other)
+                } else if other == &from {
+                    Some(*island)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
@@ -321,24 +335,51 @@ impl CoordinateSystem for HexSystem {
         (row, column)
     }
 
+    ///
+    ///
+    ///
+    ///
     fn get_actual_bridges(&self, from: usize) -> usize {
-        let connections = HexSystem::get_connected_islands(self.columns, self.rows, from);
-        // connections.iter().map(|c| self.bridges)
-        // self.bridges
-        // .get(&(std::cmp::min(from, to), std::cmp::max(from, to))).
-        0
+        let connections = self.get_connected_islands(from);
+        connections
+            .into_iter()
+            .filter_map(|to| {
+                self.bridges
+                    .get(&(std::cmp::min(from, to), std::cmp::max(from, to)))
+                    .map(|b| b.get_count())
+            })
+            .sum()
+    }
+
+    ///
+    ///
+    ///
+    ///
+    fn is_solved(&self) -> bool {
+        self.islands
+            .iter()
+            .enumerate()
+            .filter_map(|(index, target)| {
+                if target.is_some() {
+                    Some((index, target.unwrap()))
+                } else {
+                    None
+                }
+            })
+            .all(|(index, target)| target == self.get_actual_bridges(index))
+            && self.bridges.values().all(|b| b.state == b.target)
     }
 }
 
 impl Bridge for HexBridge {
     fn cycle(&mut self) -> Option<usize> {
-        match self.target {
-            BridgeState::Empty => self.target = BridgeState::Partial,
-            BridgeState::Partial => self.target = BridgeState::Full,
-            BridgeState::Full => self.target = BridgeState::Empty,
-            BridgeState::Blocked => self.target = BridgeState::Blocked,
-        }
-        match self.target {
+        self.state = match self.state {
+            BridgeState::Empty => BridgeState::Partial,
+            BridgeState::Partial => BridgeState::Full,
+            BridgeState::Full => BridgeState::Empty,
+            BridgeState::Blocked => BridgeState::Blocked,
+        };
+        match self.state {
             BridgeState::Empty => Some(0),
             BridgeState::Partial => Some(1),
             BridgeState::Full => Some(2),
@@ -347,7 +388,7 @@ impl Bridge for HexBridge {
     }
 
     fn get_count(&self) -> usize {
-        match self.target {
+        match self.state {
             BridgeState::Empty => 0,
             BridgeState::Partial => 1,
             BridgeState::Full => 2,
@@ -360,7 +401,7 @@ impl Bridge for HexBridge {
     }
 
     fn get_state(&self) -> &BridgeState {
-        &self.target
+        &self.state
     }
 }
 
@@ -372,7 +413,7 @@ mod test {
     #[test]
     fn check_connections() {
         for i in 0..22 {
-            let x = HexSystem::get_connected_islands(4, 5, i);
+            let x = HexSystem::get_connected_indices(4, 5, i);
             let res: [Option<usize>; 6] = match i {
                 0 => [None, None, Some(1), Some(5), Some(4), None],
                 1 => [None, None, Some(2), Some(6), Some(5), Some(0)],
@@ -423,21 +464,21 @@ mod test {
     #[test]
     fn very_small_hashi() {
         let hex = HexSystem::generate_new(1, 4, 5, 5, 2, 0.0, 0.0);
-        // dbg!(&hex);
+        // // dbg!(&hex);
         println!("{}", hex);
     }
 
     #[test]
     fn small_hashi() {
         let hex = HexSystem::generate_new(1, 4, 5, 8, 3, 0.0, 0.0);
-        // dbg!(&hex);
+        // // dbg!(&hex);
         println!("{}", hex);
     }
 
     #[test]
     fn medium_hashi() {
         let hex = HexSystem::generate_new(1, 15, 15, 28, 7, 0.0, 0.0);
-        // dbg!(&hex);
+        // // dbg!(&hex);
         println!("{}", hex);
     }
 }

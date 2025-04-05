@@ -19,6 +19,8 @@ pub trait CoordinateSystem {
     fn get_row_column_for_index(&self, from: usize) -> (usize, usize);
 
     fn get_actual_bridges(&self, from: usize) -> usize;
+
+    fn is_solved(&self) -> bool;
 }
 
 pub trait Bridge {

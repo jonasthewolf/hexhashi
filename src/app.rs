@@ -13,8 +13,8 @@ extern "C" {
 }
 
 #[derive(Params, PartialEq)]
-struct StartGameArgs {
-    difficulty: Option<Difficulty>,
+pub struct StartGameArgs {
+    pub difficulty: Option<Difficulty>,
 }
 
 #[component]
