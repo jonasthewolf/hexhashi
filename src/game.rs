@@ -5,22 +5,23 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use hexhashi_logic::{
-    hashi::{Bridge, CoordinateSystem},
-    hex::HexSystem,
-};
+use hexhashi_logic::hex::{BridgeState, HexSystem, Island};
 use leptos::{
-    ev::{click, mousedown, mouseup},
+    ev::{mousedown, mouseup},
     html::Canvas,
     logging::log,
     prelude::*,
 };
 use leptos_router::hooks::use_params_map;
 use leptos_use::{UseMouseInElementReturn, use_event_listener, use_mouse_in_element};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, console::log};
+use web_sys::CanvasRenderingContext2d;
 
-#[derive(Clone, Debug, PartialEq)]
+use leptos::Params;
+use leptos_router::params::Params;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Difficulty {
     Easy,
     Medium,
@@ -53,14 +54,26 @@ impl FromStr for Difficulty {
     }
 }
 
+#[derive(Params, PartialEq)]
+pub struct StartGameArgs {
+    pub difficulty: Option<Difficulty>,
+}
+
 #[component]
 pub fn Game() -> impl IntoView {
     let params = use_params_map();
-    let difficulty = params.read_untracked().get("difficulty");
+    let diff = move || params.read_untracked().get("difficulty");
+
+    log!("{:?}", diff());
+    let seed = window().performance().unwrap().now() as u64;
+    log!("{}", seed);
+    let seed = 67;
 
     let game = Arc::new(RwLock::new(HexSystem::generate_new(
-        1, 10, 10, 40, 10, 0.0, 0.0,
+        seed, 10, 10, 40, 10, 0.0, 0.0,
     )));
+
+    log!("{:?}", game.read().unwrap().bridges);
 
     let canvas = NodeRef::<Canvas>::new();
     let (read_bridge, update_bridge) = signal(None);
@@ -72,7 +85,7 @@ pub fn Game() -> impl IntoView {
         let y = evt.offset_y();
         // log!("click: {},{}", x, y);
         if let Some((from, to)) = get_bridge_from_coordinates(&g.read().unwrap(), x, y) {
-            // log!("{} -> {}", from, to);
+            log!("{} -> {}", from, to);
             update_bridge.set(Some((from, to)));
         }
     });
@@ -167,7 +180,7 @@ fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usiz
     for (start_index, end_index) in game.bridges.keys() {
         let start = get_coordinates_from_index(game, *start_index);
         let end = get_coordinates_from_index(game, *end_index);
-        if get_distance_point_line((x as f64, y as f64), start, end) < 5.0 {
+        if point_close_to_line((x as f64, y as f64), start, end, 5.0) {
             return Some((*start_index, *end_index));
         }
     }
@@ -194,7 +207,10 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 
 ///
 ///
+/// TODO: Draw double bridge with big line in blue, then smaller in background color, then thin with normal grid line.
+///       Problem is: how to keep background color and stroke color in sync (e.g. dark mode).
 ///
+/// TODO: highlight all possible bridges, when a island is hovered.
 ///
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
@@ -224,14 +240,14 @@ fn draw_grid(
         let end = get_coordinates_from_index(game, *end_index);
         ctx.begin_path();
         match bridge.get_state() {
-            hexhashi_logic::hashi::BridgeState::Empty => {}
-            hexhashi_logic::hashi::BridgeState::Partial => {
+            BridgeState::Empty => {}
+            BridgeState::Partial => {
                 ctx.set_line_width(3.0);
                 ctx.set_stroke_style_str("dodgerblue");
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
-            hexhashi_logic::hashi::BridgeState::Full => {
+            BridgeState::Full => {
                 ctx.set_line_width(10.0);
                 ctx.set_stroke_style_str("dodgerblue");
                 ctx.move_to(start.0, start.1);
@@ -243,7 +259,6 @@ fn draw_grid(
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
-            hexhashi_logic::hashi::BridgeState::Blocked => {}
         }
         ctx.stroke();
     }
@@ -253,8 +268,17 @@ fn draw_grid(
         for (start_index, end_index) in game.bridges.keys() {
             let start = get_coordinates_from_index(game, *start_index);
             let end = get_coordinates_from_index(game, *end_index);
+            log!(
+                "{} {} {:?} {:?} {:?} {}",
+                start_index,
+                end_index,
+                point,
+                start,
+                end,
+                point_close_to_line(point, start, end, 5.0)
+            );
             if bridge_update.get() != Some((*start_index, *end_index))
-                && get_distance_point_line(point, start, end) < 5.0
+                && point_close_to_line(point, start, end, 5.0)
             {
                 ctx.begin_path();
                 ctx.set_line_width(3.0);
@@ -269,11 +293,22 @@ fn draw_grid(
 
 ///
 /// Get distance between `point` and line defined by `start` and `end` points.
+/// TODO: yields 0 if not "somewhere" between `start` and `end`. Also fix tests.
+///       
 ///
-fn get_distance_point_line(point: (f64, f64), start: (f64, f64), end: (f64, f64)) -> f64 {
-    ((end.1 - start.1) * point.0 - (end.0 - start.0) * point.1 + end.0 * start.1 - end.1 * start.0)
+fn point_close_to_line(
+    point: (f64, f64),
+    start: (f64, f64),
+    end: (f64, f64),
+    max_distance: f64,
+) -> bool {
+    (if start.0 > end.0 { point.0 <= start.0 } else { point.0 <= end.0 }) && // max
+   (if end.0 > start.0 { point.0 >= start.0 } else { point.0 >= end.0 }) && // min
+   (if start.1 > end.1 { point.1 <= start.1 } else { point.1 <= end.1 }) && // max
+   (if end.1 > start.1 { point.1 >= start.1 } else { point.1 >= end.1 }) && // min
+   ((end.1 - start.1) * point.0 - (end.0 - start.0) * point.1 + end.0 * start.1 - end.1 * start.0)
         .abs()
-        / ((end.1 - start.1).powf(2.0) + (end.0 - start.0).powf(2.0)).sqrt()
+        / ((end.1 - start.1).powf(2.0) + (end.0 - start.0).powf(2.0)).sqrt() < max_distance
 }
 
 ///
@@ -288,7 +323,7 @@ fn draw_islands(
     is_outside: Signal<bool>,
 ) {
     for (index, island) in game.islands.iter().enumerate() {
-        if let Some(target) = island {
+        if let Island::Bridged(target) = island {
             let actual = game.get_actual_bridges(index);
             let (island_color, text_color) = if actual == 0 {
                 ("white", "black")
@@ -306,6 +341,7 @@ fn draw_islands(
             ctx.set_stroke_style_str("transparent");
             ctx.stroke();
             // log!("{} {} {}", mouse_x.get(), mouse_y.get(), is_outside.get());
+            // Draw hovering
             // Order of the two conditions is important here: If it was different, there is no update when moved within element.
             if ((x - mouse_x.get()).powf(2.0) + (y - mouse_y.get()).powf(2.0)).sqrt() <= ISLAND_SIZE
                 && !is_outside.get()
@@ -336,18 +372,47 @@ fn draw_islands(
 mod test {
     use std::{collections::BTreeMap, f64::EPSILON};
 
-    use hexhashi_logic::hex::HexSystem;
+    use hexhashi_logic::hex::{HexSystem, Island};
 
     use crate::game::LINE_HEIGHT;
 
-    use super::get_coordinates_from_index;
+    use super::{get_coordinates_from_index, point_close_to_line};
+
+    #[test]
+    fn distance() {
+        let start = (20.0, 20.0);
+        let end = (40.0, 40.0);
+        let point = (30.0, 30.0);
+        let distance = point_close_to_line(point, start, end, 5.0);
+        assert_eq!(distance, true);
+        let distance = point_close_to_line(point, end, start, 5.0);
+        assert_eq!(distance, true);
+        let point = (32.0, 32.0);
+        let distance = point_close_to_line(point, start, end, 5.0);
+        assert_eq!(distance, true);
+        let distance = point_close_to_line(point, end, start, 5.0);
+        assert_eq!(distance, true);
+        let point = (5.0, 5.0);
+        let distance = point_close_to_line(point, start, end, 5.0);
+        assert_eq!(distance, false);
+        let point = (60.0, 60.0);
+        let distance = point_close_to_line(point, start, end, 5.0);
+        assert_eq!(distance, false);
+        let distance = point_close_to_line(point, end, start, 5.0);
+        assert_eq!(distance, false);
+        let point = (40.0, 20.0);
+        let distance = point_close_to_line(point, start, end, 5.0);
+        assert_eq!(distance, false);
+        let distance = point_close_to_line(point, end, start, 5.0);
+        assert_eq!(distance, false);
+    }
 
     #[test]
     fn index_to_coordinate() {
         let sys = HexSystem {
             columns: 4,
             rows: 5,
-            islands: vec![None; 22],
+            islands: vec![Island::Empty; 22],
             bridges: BTreeMap::new(),
         };
 
@@ -356,8 +421,6 @@ mod test {
         assert!((y - LINE_HEIGHT).abs() < EPSILON);
 
         let (x, y) = get_coordinates_from_index(&sys, 3);
-        dbg!(x);
-        dbg!(y);
         assert!((x - 305.9401076758503).abs() < EPSILON);
         assert!((y - LINE_HEIGHT).abs() < EPSILON);
 
@@ -366,8 +429,6 @@ mod test {
         assert!((y - 2.0 * LINE_HEIGHT).abs() < EPSILON);
 
         let (x, y) = get_coordinates_from_index(&sys, 21);
-        dbg!(x);
-        dbg!(y);
         assert!((x - 305.9401076758503).abs() < EPSILON);
         assert!((y - 5.0 * LINE_HEIGHT).abs() < EPSILON);
     }

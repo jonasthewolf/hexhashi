@@ -1,20 +1,14 @@
-use crate::game::{Difficulty, Game};
+use crate::game::Game;
 use leptos::prelude::*;
 use leptos_router::path;
 use wasm_bindgen::prelude::*;
 
 use leptos_router::components::{Route, Router, Routes};
-use leptos_router::params::Params;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
-}
-
-#[derive(Params, PartialEq)]
-pub struct StartGameArgs {
-    pub difficulty: Option<Difficulty>,
 }
 
 #[component]

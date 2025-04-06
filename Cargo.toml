@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1.7"
 hexhashi_logic = { path = "hashi_logic" }
-web-sys = { version = "0.3", features = ["HtmlCanvasElement", "CanvasRenderingContext2d", "DomRect"] }
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "CanvasRenderingContext2d", "DomRect", "Performance"] }
 
 [workspace]
 resolver = "3"
