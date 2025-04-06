@@ -182,7 +182,7 @@ impl HexSystem {
         indices[start_index] = Some(GenIsland::Created);
         let mut bridges: BTreeMap<(usize, usize), HexBridge> = BTreeMap::new();
 
-        let mut limit = 50;
+        let mut limit = 10;
 
         // Randomly walk a tour on the grid randomly selecting direction, width and length of bridge
         while indices

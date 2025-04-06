@@ -143,6 +143,7 @@ fn draw(
         is_outside,
         ..
     } = use_mouse_in_element(canvas);
+    // TODO throttle mouse move event?
 
     Effect::new(move |_| {
         ctx.clear_rect(0.0, 0.0, width, height);
