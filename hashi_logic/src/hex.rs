@@ -88,99 +88,7 @@ impl HexSystem {
         _ratio_big_island: f64,
         _ratio_long_bridge: f64,
     ) -> Self {
-        let (islands, bridges, (columns, rows)) = HexSystem::generate_islands(
-            max_columns,
-            max_rows,
-            num_islands,
-            max_bridge_length,
-            seed,
-        );
-
-        HexSystem {
-            columns,
-            rows,
-            islands,
-            bridges,
-        }
-    }
-
-    ///
-    /// Get indices of connected islands
-    ///
-    /// Skip first row here, if `from` is in first row of puzzle (i.e. x < c).
-    /// Skip last row here, if `from` is in last row of puzzle (i.e. x > w * h - c).
-    /// Skip first column here, if `from` is in first column of puzzle.
-    /// Skip last column here, if `from` is in last column of puzzle.
-    ///
-    ///  x - c - 1 ------ x - c
-    ///     /      \    /     \
-    ///  x - 1 ----- x ----- x + 1
-    ///     \      /   \      /
-    ///    x + c  ------ x + c + 1
-    ///
-    /// The order is NW, NE, E, SE, SW, W
-    ///
-    ///
-    pub const fn get_connected_indices(
-        columns: usize,
-        rows: usize,
-        from: usize,
-    ) -> [Option<usize>; 6] {
-        let mut connections = [None; 6];
-        let even_row = from % (2 * columns + 1) < columns;
-        let first_column = from - from % (2 * columns + 1) + if even_row { 0 } else { columns };
-        let last_column = first_column + columns - 1 + if even_row { 0 } else { 1 };
-        // Starting from second row
-        if from >= columns {
-            if even_row || from != first_column {
-                connections[0] = Some(from - columns - 1);
-            }
-            if from != last_column + if even_row { 1 } else { 0 } {
-                connections[1] = Some(from - columns);
-            }
-        }
-        // First column
-        if from != first_column {
-            connections[5] = Some(from - 1);
-        }
-        // Last column
-        if from != last_column {
-            connections[2] = Some(from + 1);
-        }
-        // Not last row
-        if from <= (rows - 1) * columns + 1 {
-            if even_row || from != first_column {
-                connections[4] = Some(from + columns);
-            }
-            if from != last_column + if even_row { 1 } else { 0 } {
-                connections[3] = Some(from + columns + 1);
-            }
-        }
-        connections
-    }
-
-    ///
-    /// Get size of vector needed to store a `columns` x `rows` puzzle.
-    ///
-    fn get_size(columns: usize, rows: usize) -> usize {
-        columns * rows + rows / 2
-    }
-
-    ///
-    ///
-    ///
-    ///
-    fn generate_islands(
-        max_columns: usize,
-        max_rows: usize,
-        num_islands: usize,
-        max_bridge_length: usize,
-        seed: u64,
-    ) -> (
-        Vec<Island>,
-        BTreeMap<(usize, usize), HexBridge>,
-        (usize, usize),
-    ) {
+        
         let size = HexSystem::get_size(max_columns, max_rows);
 
         let mut rng = SmallRng::seed_from_u64(seed);
@@ -289,9 +197,78 @@ impl HexSystem {
         });
         // Fill bridges between existing islands that do not contribute to solution.
         HexSystem::fill_bridges(&islands, max_columns, max_rows, &mut bridges);
-        let new_size = HexSystem::crop(&mut islands, max_columns, max_rows);
-        (islands, bridges, new_size)
+        let (columns, rows) = HexSystem::crop(&mut islands, max_columns, max_rows);
+
+        HexSystem {
+            columns,
+            rows,
+            islands,
+            bridges,
+        }
     }
+
+    ///
+    /// Get indices of connected islands
+    ///
+    /// Skip first row here, if `from` is in first row of puzzle (i.e. x < c).
+    /// Skip last row here, if `from` is in last row of puzzle (i.e. x > w * h - c).
+    /// Skip first column here, if `from` is in first column of puzzle.
+    /// Skip last column here, if `from` is in last column of puzzle.
+    ///
+    ///  x - c - 1 ------ x - c
+    ///     /      \    /     \
+    ///  x - 1 ----- x ----- x + 1
+    ///     \      /   \      /
+    ///    x + c  ------ x + c + 1
+    ///
+    /// The order is NW, NE, E, SE, SW, W
+    ///
+    ///
+    pub const fn get_connected_indices(
+        columns: usize,
+        rows: usize,
+        from: usize,
+    ) -> [Option<usize>; 6] {
+        let mut connections = [None; 6];
+        let even_row = from % (2 * columns + 1) < columns;
+        let first_column = from - from % (2 * columns + 1) + if even_row { 0 } else { columns };
+        let last_column = first_column + columns - 1 + if even_row { 0 } else { 1 };
+        // Starting from second row
+        if from >= columns {
+            if even_row || from != first_column {
+                connections[0] = Some(from - columns - 1);
+            }
+            if from != last_column + if even_row { 1 } else { 0 } {
+                connections[1] = Some(from - columns);
+            }
+        }
+        // First column
+        if from != first_column {
+            connections[5] = Some(from - 1);
+        }
+        // Last column
+        if from != last_column {
+            connections[2] = Some(from + 1);
+        }
+        // Not last row
+        if from <= (rows - 1) * columns + 1 {
+            if even_row || from != first_column {
+                connections[4] = Some(from + columns);
+            }
+            if from != last_column + if even_row { 1 } else { 0 } {
+                connections[3] = Some(from + columns + 1);
+            }
+        }
+        connections
+    }
+
+    ///
+    /// Get size of vector needed to store a `columns` x `rows` puzzle.
+    ///
+    fn get_size(columns: usize, rows: usize) -> usize {
+        columns * rows + rows / 2
+    }
+
 
     ///
     /// Returns the new size (columns, rows)
@@ -351,7 +328,6 @@ impl HexSystem {
                                     state: BridgeState::Empty,
                                 },
                             );
-                            break;
                         }
                     }
                 }
@@ -694,6 +670,29 @@ mod test {
         );
         assert!(bridges.values().all(|b| b.state == BridgeState::Empty));
     }
+
+
+    #[test]
+    fn fill_bridges_small_complex() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[2] = Island::Bridged(1);
+        islands[3] = Island::Bridged(1);
+        islands[10] = Island::Bridged(1);
+        islands[14] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        islands[16] = Island::Bridged(1);
+        islands[19] = Island::Bridged(1);
+        islands[21] = Island::Bridged(1);
+        let mut bridges = BTreeMap::new();
+        HexSystem::fill_bridges(&islands, 4, 5, &mut bridges);
+        assert_eq!(
+            bridges.keys().collect::<Vec<_>>(),
+            vec![&(0usize, 2usize), &(0, 10), &(2, 3), &(2,10), &(3, 15), &(10, 14), &(10,15), &(14,15), &(14,19), &(15,16), &(15,19), &(16,21), &(19,21)]
+        );
+        assert!(bridges.values().all(|b| b.state == BridgeState::Empty));
+    }
+
 
     #[test]
     fn solution_unsolvable() {

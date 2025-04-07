@@ -67,10 +67,10 @@ pub fn Game() -> impl IntoView {
     log!("{:?}", diff());
     let seed = window().performance().unwrap().now() as u64;
     log!("{}", seed);
-    let seed = 67;
 
+    // TODO Implement different difficulties 
     let game = Arc::new(RwLock::new(HexSystem::generate_new(
-        seed, 10, 10, 40, 10, 0.0, 0.0,
+        seed, 10, 10, 40, 1, 0.0, 0.0,
     )));
 
     log!("{:?}", game.read().unwrap().bridges);
@@ -85,7 +85,7 @@ pub fn Game() -> impl IntoView {
         let y = evt.offset_y();
         // log!("click: {},{}", x, y);
         if let Some((from, to)) = get_bridge_from_coordinates(&g.read().unwrap(), x, y) {
-            log!("{} -> {}", from, to);
+            // log!("{} -> {}", from, to);
             update_bridge.set(Some((from, to)));
         }
     });
@@ -98,6 +98,7 @@ pub fn Game() -> impl IntoView {
     Effect::new(move |_| {
         if let Some((from, to)) = read_bridge.get() {
             let mut game = g.write().unwrap();
+            // TODO Check for blocked islands
             if let Some(bridge) = game.get_mut_bridge(from, to) {
                 let _ = bridge.cycle();
                 set_solved.set(game.is_solved());
@@ -211,6 +212,8 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 ///       Problem is: how to keep background color and stroke color in sync (e.g. dark mode).
 ///
 /// TODO: highlight all possible bridges, when a island is hovered.
+/// 
+/// TODO: Draw all bridges green if game is solved.
 ///
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
@@ -292,8 +295,7 @@ fn draw_grid(
 }
 
 ///
-/// Get distance between `point` and line defined by `start` and `end` points.
-/// TODO: yields 0 if not "somewhere" between `start` and `end`. Also fix tests.
+/// Is `point` closer to line defined by `start` and `end` points as `max_distance``.
 ///       
 ///
 fn point_close_to_line(
