@@ -68,12 +68,10 @@ pub fn Game() -> impl IntoView {
     let seed = window().performance().unwrap().now() as u64;
     log!("{}", seed);
 
-    // TODO Implement different difficulties 
+    // TODO Implement different difficulties
     let game = Arc::new(RwLock::new(HexSystem::generate_new(
         seed, 10, 10, 40, 1, 0.0, 0.0,
     )));
-
-    log!("{:?}", game.read().unwrap().bridges);
 
     let canvas = NodeRef::<Canvas>::new();
     let (read_bridge, update_bridge) = signal(None);
@@ -98,11 +96,11 @@ pub fn Game() -> impl IntoView {
     Effect::new(move |_| {
         if let Some((from, to)) = read_bridge.get() {
             let mut game = g.write().unwrap();
-            // TODO Check for blocked islands
-            if let Some(bridge) = game.get_mut_bridge(from, to) {
-                let _ = bridge.cycle();
-                set_solved.set(game.is_solved());
+            let res = game.cycle_bridge(from, to);
+            if let Ok(solved) = res {
+                set_solved.set(solved);
             }
+            // TODO report error: maybe just by highlighting blocking bridge in red.
         }
     });
 
@@ -181,7 +179,7 @@ fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usiz
     for (start_index, end_index) in game.bridges.keys() {
         let start = get_coordinates_from_index(game, *start_index);
         let end = get_coordinates_from_index(game, *end_index);
-        if point_close_to_line((x as f64, y as f64), start, end, 5.0) {
+        if point_close_to_line((x as f64, y as f64), start, end, 10.0) {
             return Some((*start_index, *end_index));
         }
     }
@@ -210,10 +208,6 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 ///
 /// TODO: Draw double bridge with big line in blue, then smaller in background color, then thin with normal grid line.
 ///       Problem is: how to keep background color and stroke color in sync (e.g. dark mode).
-///
-/// TODO: highlight all possible bridges, when a island is hovered.
-/// 
-/// TODO: Draw all bridges green if game is solved.
 ///
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
@@ -268,20 +262,35 @@ fn draw_grid(
     // Draw hovering
     let point = (mouse_x.get(), mouse_y.get());
     if !is_outside.get() {
+        // Highlight all bridges going to the island the mouse is pointing to.
+        let mut highlighted_bridges = vec![];
+        for (index, _) in game.islands.iter().enumerate() {
+            let (x, y) = get_coordinates_from_index(game, index);
+            if ((x - point.0).powf(2.0) + (y - point.1).powf(2.0)).sqrt() <= ISLAND_SIZE
+                && !is_outside.get()
+            {
+                highlighted_bridges = game
+                    .get_connected_islands(index)
+                    .iter()
+                    .map(|to| (std::cmp::min(index, *to), std::cmp::max(index, *to)))
+                    .collect();
+            }
+        }
         for (start_index, end_index) in game.bridges.keys() {
             let start = get_coordinates_from_index(game, *start_index);
             let end = get_coordinates_from_index(game, *end_index);
-            log!(
-                "{} {} {:?} {:?} {:?} {}",
-                start_index,
-                end_index,
-                point,
-                start,
-                end,
-                point_close_to_line(point, start, end, 5.0)
-            );
-            if bridge_update.get() != Some((*start_index, *end_index))
-                && point_close_to_line(point, start, end, 5.0)
+            // log!(
+            //     "{} {} {:?} {:?} {:?} {}",
+            //     start_index,
+            //     end_index,
+            //     point,
+            //     start,
+            //     end,
+            //     point_close_to_line(point, start, end, 10.0)
+            // );
+            if (bridge_update.get() != Some((*start_index, *end_index))
+                && point_close_to_line(point, start, end, 10.0))
+                || highlighted_bridges.contains(&(*start_index, *end_index))
             {
                 ctx.begin_path();
                 ctx.set_line_width(3.0);
@@ -304,17 +313,28 @@ fn point_close_to_line(
     end: (f64, f64),
     max_distance: f64,
 ) -> bool {
-    (if start.0 > end.0 { point.0 <= start.0 } else { point.0 <= end.0 }) && // max
-   (if end.0 > start.0 { point.0 >= start.0 } else { point.0 >= end.0 }) && // min
-   (if start.1 > end.1 { point.1 <= start.1 } else { point.1 <= end.1 }) && // max
-   (if end.1 > start.1 { point.1 >= start.1 } else { point.1 >= end.1 }) && // min
-   ((end.1 - start.1) * point.0 - (end.0 - start.0) * point.1 + end.0 * start.1 - end.1 * start.0)
-        .abs()
-        / ((end.1 - start.1).powf(2.0) + (end.0 - start.0).powf(2.0)).sqrt() < max_distance
+    let start_end = (end.0 - start.0, end.1 - start.1);
+    let start_point = (point.0 - start.0, point.1 - start.1);
+    let ab_len_squared = start_end.0 * start_end.0 + start_end.1 * start_end.1;
+
+    let t = if ab_len_squared.abs() > f64::EPSILON {
+        (start_point.0 * start_end.0 + start_point.1 * start_end.1) / ab_len_squared
+    } else {
+        0.0 // A and B are the same point
+    };
+
+    let t_clamped = t.clamp(0.0, 1.0);
+
+    let closest = (
+        start.0 + t_clamped * start_end.0,
+        start.1 + t_clamped * start_end.1,
+    );
+    let distance = ((point.0 - closest.0).powf(2.0) + (point.1 - closest.1).powf(2.0)).sqrt();
+    distance < max_distance
 }
 
 ///
-///
+/// TODO make circle around hovering island partly transparent
 ///
 ///
 fn draw_islands(
@@ -342,7 +362,7 @@ fn draw_islands(
             ctx.set_line_width(3.0);
             ctx.set_stroke_style_str("transparent");
             ctx.stroke();
-            // log!("{} {} {}", mouse_x.get(), mouse_y.get(), is_outside.get());
+
             // Draw hovering
             // Order of the two conditions is important here: If it was different, there is no update when moved within element.
             if ((x - mouse_x.get()).powf(2.0) + (y - mouse_y.get()).powf(2.0)).sqrt() <= ISLAND_SIZE

@@ -14,7 +14,25 @@ pub enum BridgeState {
 #[derive(Clone, Debug)]
 pub struct HexBridge {
     state: BridgeState,
+    gap_indices: Vec<usize>,
 }
+
+#[derive(Clone, Debug)]
+pub enum BridgeError {
+    NotFound,
+    Blocked,
+}
+
+impl Display for BridgeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BridgeError::NotFound => f.write_str("Bridge is not found."),
+            BridgeError::Blocked => f.write_str("Bridge is blocked."),
+        }
+    }
+}
+
+impl std::error::Error for BridgeError {}
 
 ///
 ///
@@ -88,7 +106,6 @@ impl HexSystem {
         _ratio_big_island: f64,
         _ratio_long_bridge: f64,
     ) -> Self {
-        
         let size = HexSystem::get_size(max_columns, max_rows);
 
         let mut rng = SmallRng::seed_from_u64(seed);
@@ -165,6 +182,7 @@ impl HexSystem {
                             2 => BridgeState::Full,
                             _ => unreachable!(),
                         },
+                        gap_indices: vec![], // Not important here
                     });
                 indices[end_index] = Island::Bridged(0);
                 start_index = end_index;
@@ -196,7 +214,7 @@ impl HexSystem {
             bw.state = BridgeState::Empty;
         });
         // Fill bridges between existing islands that do not contribute to solution.
-        HexSystem::fill_bridges(&islands, max_columns, max_rows, &mut bridges);
+        let bridges = HexSystem::fill_bridges(&islands, max_columns, max_rows);
         let (columns, rows) = HexSystem::crop(&mut islands, max_columns, max_rows);
 
         HexSystem {
@@ -269,7 +287,6 @@ impl HexSystem {
         columns * rows + rows / 2
     }
 
-
     ///
     /// Returns the new size (columns, rows)
     ///
@@ -279,26 +296,28 @@ impl HexSystem {
     }
 
     ///
-    ///
+    /// Also remember the indicies of the "gap islands". This is used later for checking of blocked bridges.
     ///
     fn fill_bridges(
         islands: &[Island],
         columns: usize,
         rows: usize,
-        bridges: &mut BTreeMap<(usize, usize), HexBridge>,
-    ) {
+    ) -> BTreeMap<(usize, usize), HexBridge> {
+        let mut bridges = BTreeMap::new();
         for start_index in 0..islands.len() {
             if let Island::Bridged(_) = islands[start_index] {
                 let connections = HexSystem::get_connected_indices(columns, rows, start_index);
                 for (direction, opt_con) in connections.iter().enumerate() {
                     let mut end_index = None;
                     if let Some(con) = *opt_con {
+                        let mut gaps = vec![];
                         match islands[con] {
                             Island::Blocked => unreachable!(),
                             Island::Bridged(_) => {
                                 end_index = Some(con);
                             }
                             Island::Empty => {
+                                gaps.push(con);
                                 let mut next_index = con;
                                 loop {
                                     let next_con =
@@ -310,6 +329,7 @@ impl HexSystem {
                                             break;
                                         }
                                         if let Island::Empty = islands[next_island] {
+                                            gaps.push(next_island);
                                             next_index = next_island;
                                         }
                                     } else {
@@ -326,6 +346,7 @@ impl HexSystem {
                                 ),
                                 HexBridge {
                                     state: BridgeState::Empty,
+                                    gap_indices: gaps,
                                 },
                             );
                         }
@@ -333,12 +354,13 @@ impl HexSystem {
                 }
             }
         }
+        bridges
     }
 
     ///
     /// Get connected islands for `from` island.
     ///
-    fn get_connected_islands(&self, from: usize) -> Vec<usize> {
+    pub fn get_connected_islands(&self, from: usize) -> Vec<usize> {
         self.bridges
             .iter()
             .filter_map(|((island, other), _)| {
@@ -356,9 +378,33 @@ impl HexSystem {
     ///
     ///
     ///
-    pub fn get_mut_bridge(&mut self, from: usize, to: usize) -> Option<&mut HexBridge> {
-        self.bridges
-            .get_mut(&(std::cmp::min(from, to), std::cmp::max(from, to)))
+    pub fn cycle_bridge(&mut self, from: usize, to: usize) -> Result<bool, BridgeError> {
+        let cur_bridge = (std::cmp::min(from, to), std::cmp::max(from, to));
+        if let Some(bridge) = self.bridges.get(&cur_bridge) {
+            let gaps = BTreeSet::from_iter(bridge.gap_indices.iter());
+            let blocked = self
+                .bridges
+                .iter()
+                .filter(|(b, _)| **b != cur_bridge)
+                .any(|(_, b)| {
+                    b.state != BridgeState::Empty
+                        && !b
+                            .gap_indices
+                            .iter()
+                            .collect::<BTreeSet<_>>()
+                            .is_disjoint(&gaps)
+                });
+            if blocked {
+                Err(BridgeError::Blocked)
+            } else if let Some(bridge) = self.bridges.get_mut(&cur_bridge) {
+                bridge.cycle();
+                Ok(self.is_solved())
+            } else {
+                Err(BridgeError::NotFound)
+            }
+        } else {
+            Err(BridgeError::NotFound)
+        }
     }
 
     ///
@@ -596,6 +642,7 @@ mod test {
             (0usize, 1usize),
             HexBridge {
                 state: BridgeState::Full,
+                gap_indices: vec![],
             },
         )]);
         let hex = HexSystem {
@@ -619,30 +666,35 @@ mod test {
                 (0usize, 1usize),
                 HexBridge {
                     state: BridgeState::Full,
+                    gap_indices: vec![],
                 },
             ),
             (
                 (0usize, 4usize),
                 HexBridge {
                     state: BridgeState::Empty,
+                    gap_indices: vec![],
                 },
             ),
             (
                 (0usize, 5usize),
                 HexBridge {
                     state: BridgeState::Empty,
+                    gap_indices: vec![],
                 },
             ),
             (
                 (1usize, 5usize),
                 HexBridge {
                     state: BridgeState::Partial,
+                    gap_indices: vec![],
                 },
             ),
             (
                 (4usize, 5usize),
                 HexBridge {
                     state: BridgeState::Partial,
+                    gap_indices: vec![],
                 },
             ),
         ]);
@@ -662,15 +714,14 @@ mod test {
         islands[2] = Island::Bridged(1);
         islands[3] = Island::Bridged(1);
         islands[15] = Island::Bridged(1);
-        let mut bridges = BTreeMap::new();
-        HexSystem::fill_bridges(&islands, 4, 5, &mut bridges);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
         assert_eq!(
             bridges.keys().collect::<Vec<_>>(),
             vec![&(0usize, 2usize), &(0, 15), &(2, 3), &(3, 15)]
         );
+        dbg!(&bridges);
         assert!(bridges.values().all(|b| b.state == BridgeState::Empty));
     }
-
 
     #[test]
     fn fill_bridges_small_complex() {
@@ -684,15 +735,27 @@ mod test {
         islands[16] = Island::Bridged(1);
         islands[19] = Island::Bridged(1);
         islands[21] = Island::Bridged(1);
-        let mut bridges = BTreeMap::new();
-        HexSystem::fill_bridges(&islands, 4, 5, &mut bridges);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
         assert_eq!(
             bridges.keys().collect::<Vec<_>>(),
-            vec![&(0usize, 2usize), &(0, 10), &(2, 3), &(2,10), &(3, 15), &(10, 14), &(10,15), &(14,15), &(14,19), &(15,16), &(15,19), &(16,21), &(19,21)]
+            vec![
+                &(0usize, 2usize),
+                &(0, 10),
+                &(2, 3),
+                &(2, 10),
+                &(3, 15),
+                &(10, 14),
+                &(10, 15),
+                &(14, 15),
+                &(14, 19),
+                &(15, 16),
+                &(15, 19),
+                &(16, 21),
+                &(19, 21)
+            ]
         );
         assert!(bridges.values().all(|b| b.state == BridgeState::Empty));
     }
-
 
     #[test]
     fn solution_unsolvable() {
@@ -703,6 +766,7 @@ mod test {
             (0usize, 1usize),
             HexBridge {
                 state: BridgeState::Full,
+                gap_indices: vec![],
             },
         )]);
         let hex = HexSystem {
@@ -723,6 +787,7 @@ mod test {
             (0usize, 1usize),
             HexBridge {
                 state: BridgeState::Partial,
+                gap_indices: vec![],
             },
         )]);
         let hex = HexSystem {
