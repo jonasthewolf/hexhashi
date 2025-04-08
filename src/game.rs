@@ -193,6 +193,13 @@ fn draw(
 
 const LINE_HEIGHT: f64 = 50.0;
 const ISLAND_SIZE: f64 = 15.0;
+const BRIDGE_COLOR: &'static str = "dodgerblue";
+const GRID_COLOR: &'static str = "dimgrey";
+const ISLAND_COLOR: (&'static str, &'static str) =  ("white", "black");
+const UNFINISHED_ISLAND_COLOR: (&'static str, &'static str) = ("gold", "dimgray");
+const FINISHED_ISLAND_COLOR: (&'static str, &'static str) = ("green", "white");
+const HOVER_BRIDGE: &'static str = "darkseagreen";
+const HOVER_ISLAND: &'static str = "rgba(143, 188, 143, 0.50)";
 
 ///
 ///
@@ -229,8 +236,6 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 
 ///
 ///
-/// TODO: Draw double bridge with big line in blue, then smaller in background color, then thin with normal grid line.
-///       Problem is: how to keep background color and stroke color in sync (e.g. dark mode).
 ///
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
@@ -241,7 +246,7 @@ fn draw_grid(
     bridge_update: ReadSignal<Option<(usize, usize)>>,
     background_color: Memo<Option<String>>,
 ) {
-    ctx.set_stroke_style_str("dimgrey");
+    ctx.set_stroke_style_str(GRID_COLOR);
     ctx.set_line_width(0.5);
     // Draw grid
     for index in 0..game.islands.len() {
@@ -264,14 +269,14 @@ fn draw_grid(
             BridgeState::Empty => {}
             BridgeState::Partial => {
                 ctx.set_line_width(4.0);
-                ctx.set_stroke_style_str("dodgerblue");
+                ctx.set_stroke_style_str(BRIDGE_COLOR);
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
             BridgeState::Full => {
                 let bc = background_color.get();
                 ctx.set_line_width(10.0);
-                ctx.set_stroke_style_str("dodgerblue");
+                ctx.set_stroke_style_str(BRIDGE_COLOR);
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
                 ctx.stroke();
@@ -282,8 +287,8 @@ fn draw_grid(
                 ctx.line_to(end.0, end.1);
                 ctx.stroke();
                 ctx.begin_path();
-                ctx.set_stroke_style_str("dimgrey");
                 ctx.set_line_width(0.5);
+                ctx.set_stroke_style_str(GRID_COLOR);
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
@@ -325,7 +330,7 @@ fn draw_grid(
             {
                 ctx.begin_path();
                 ctx.set_line_width(3.0);
-                ctx.set_stroke_style_str("darkseagreen");
+                ctx.set_stroke_style_str(HOVER_BRIDGE);
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
                 ctx.stroke();
@@ -379,11 +384,11 @@ fn draw_islands(
         if let Island::Bridged(target) = island {
             let actual = game.get_actual_bridges(index);
             let (island_color, text_color) = if actual == 0 {
-                ("white", "black")
+                ISLAND_COLOR
             } else if actual != *target {
-                ("gold", "dimgray")
+                UNFINISHED_ISLAND_COLOR
             } else {
-                ("green", "white")
+                FINISHED_ISLAND_COLOR
             };
             let (x, y) = get_coordinates_from_index(game, index);
             ctx.begin_path();
@@ -401,7 +406,7 @@ fn draw_islands(
             {
                 ctx.begin_path();
                 ctx.set_line_width(3.0);
-                ctx.set_stroke_style_str("darkseagreen");
+                ctx.set_stroke_style_str(HOVER_ISLAND);
                 ctx.arc(x, y, ISLAND_SIZE + 5.0, 0.0, 2.0 * PI).unwrap();
                 ctx.set_fill_style_str("transparent");
                 ctx.stroke();

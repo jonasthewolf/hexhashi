@@ -290,7 +290,7 @@ impl HexSystem {
     ///
     /// Returns the new size (columns, rows)
     ///
-    fn crop(islands: &mut Vec<Island>, max_columns: usize, max_rows: usize) -> (usize, usize) {
+    fn crop(_islands: &mut Vec<Island>, max_columns: usize, max_rows: usize) -> (usize, usize) {
         // TODO Implement
         (max_columns, max_rows)
     }
