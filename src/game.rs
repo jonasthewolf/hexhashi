@@ -74,6 +74,20 @@ pub fn Game() -> impl IntoView {
     )));
 
     let canvas = NodeRef::<Canvas>::new();
+
+    let background_color = Memo::new(move |_| {
+        if let Some(c) = window().document().unwrap().get_elements_by_tag_name("html").item(0) {        
+            let s = 
+            window()
+                .get_computed_style(&c)
+                .unwrap().map(|s| s.get_property_value("background-color").ok()).flatten();
+            s
+        } else {
+            None
+        }
+
+    });
+        
     let (read_bridge, update_bridge) = signal(None);
     let (solved, set_solved) = signal(false);
 
@@ -105,7 +119,7 @@ pub fn Game() -> impl IntoView {
     });
 
     Effect::new(move |_| {
-        draw(canvas, game.clone(), read_bridge);
+        draw(canvas, game.clone(), read_bridge, background_color);
     });
 
     view! {
@@ -131,6 +145,7 @@ fn draw(
     canvas: NodeRef<Canvas>,
     game: Arc<RwLock<HexSystem>>,
     bridge_change: ReadSignal<Option<(usize, usize)>>,
+    background_color: Memo<Option<String>>,
 ) {
     // Resize to have sharp lines
     let canvas = canvas.get().unwrap();
@@ -162,7 +177,15 @@ fn draw(
 
         let game = game.read().unwrap();
 
-        draw_grid(&ctx, &game, element_x, element_y, is_outside, bridge_change);
+        draw_grid(
+            &ctx,
+            &game,
+            element_x,
+            element_y,
+            is_outside,
+            bridge_change,
+            background_color,
+        );
 
         draw_islands(&ctx, &game, element_x, element_y, is_outside);
     });
@@ -216,6 +239,7 @@ fn draw_grid(
     mouse_y: Signal<f64>,
     is_outside: Signal<bool>,
     bridge_update: ReadSignal<Option<(usize, usize)>>,
+    background_color: Memo<Option<String>>,
 ) {
     ctx.set_stroke_style_str("dimgrey");
     ctx.set_line_width(0.5);
@@ -239,20 +263,27 @@ fn draw_grid(
         match bridge.get_state() {
             BridgeState::Empty => {}
             BridgeState::Partial => {
-                ctx.set_line_width(3.0);
+                ctx.set_line_width(4.0);
                 ctx.set_stroke_style_str("dodgerblue");
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
             BridgeState::Full => {
+                let bc = background_color.get();
                 ctx.set_line_width(10.0);
                 ctx.set_stroke_style_str("dodgerblue");
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
                 ctx.stroke();
                 ctx.begin_path();
+                ctx.set_line_width(4.0);
+                ctx.set_stroke_style_str(&bc.unwrap_or("white".to_string()));
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+                ctx.stroke();
+                ctx.begin_path();
                 ctx.set_stroke_style_str("dimgrey");
-                ctx.set_line_width(2.5);
+                ctx.set_line_width(0.5);
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
             }
