@@ -2,4 +2,5 @@
 
 # hexhashi
 
+A hashiwokakeru logic puzzle with hexagon islands.
 
