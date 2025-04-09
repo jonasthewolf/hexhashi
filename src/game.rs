@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use hexhashi_logic::hex::{BridgeState, HexSystem, Island};
+use hexhashi_logic::hex::{BridgeState, GameParameters, HexSystem, Island};
 use leptos::{
     ev::{mousedown, mouseup},
     html::Canvas,
@@ -69,25 +69,35 @@ pub fn Game() -> impl IntoView {
     log!("{}", seed);
 
     // TODO Implement different difficulties
-    let game = Arc::new(RwLock::new(HexSystem::generate_new(
-        seed, 10, 10, 40, 1, 0.0, 0.0,
-    )));
+    let params = GameParameters {
+        seed,
+        max_columns: 10,
+        max_rows: 10,
+        num_islands: 40,
+        max_bridge_length: 1,
+        ratio_big_island: 0.0,
+        ratio_long_bridge: 0.0,
+    };
+    let game = Arc::new(RwLock::new(HexSystem::generate_new(params)));
 
     let canvas = NodeRef::<Canvas>::new();
 
     let background_color = Memo::new(move |_| {
-        if let Some(c) = window().document().unwrap().get_elements_by_tag_name("html").item(0) {        
-            let s = 
+        if let Some(c) = window()
+            .document()
+            .unwrap()
+            .get_elements_by_tag_name("html")
+            .item(0)
+        {
             window()
                 .get_computed_style(&c)
-                .unwrap().map(|s| s.get_property_value("background-color").ok()).flatten();
-            s
+                .unwrap()
+                .and_then(|s| s.get_property_value("background-color").ok())
         } else {
             None
         }
-
     });
-        
+
     let (read_bridge, update_bridge) = signal(None);
     let (solved, set_solved) = signal(false);
 
@@ -193,13 +203,13 @@ fn draw(
 
 const LINE_HEIGHT: f64 = 50.0;
 const ISLAND_SIZE: f64 = 15.0;
-const BRIDGE_COLOR: &'static str = "dodgerblue";
-const GRID_COLOR: &'static str = "dimgrey";
-const ISLAND_COLOR: (&'static str, &'static str) =  ("white", "black");
-const UNFINISHED_ISLAND_COLOR: (&'static str, &'static str) = ("gold", "dimgray");
-const FINISHED_ISLAND_COLOR: (&'static str, &'static str) = ("green", "white");
-const HOVER_BRIDGE: &'static str = "darkseagreen";
-const HOVER_ISLAND: &'static str = "rgba(143, 188, 143, 0.50)";
+const BRIDGE_COLOR: &str = "dodgerblue";
+const GRID_COLOR: &str = "dimgrey";
+const ISLAND_COLOR: (&str, &str) = ("white", "black");
+const UNFINISHED_ISLAND_COLOR: (&str, &str) = ("gold", "dimgray");
+const FINISHED_ISLAND_COLOR: (&str, &str) = ("green", "white");
+const HOVER_BRIDGE: &str = "darkseagreen";
+const HOVER_ISLAND: &str = "rgba(143, 188, 143, 0.50)";
 
 ///
 ///
@@ -370,7 +380,6 @@ fn point_close_to_line(
 }
 
 ///
-/// TODO make circle around hovering island partly transparent
 ///
 ///
 fn draw_islands(

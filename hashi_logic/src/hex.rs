@@ -11,13 +11,17 @@ pub enum BridgeState {
     Partial,
     Full,
 }
+
+///
+/// Type for Bridge
+///
 #[derive(Clone, Debug)]
 pub struct HexBridge {
     state: BridgeState,
     gap_indices: Vec<usize>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BridgeError {
     NotFound,
     Blocked,
@@ -35,6 +39,7 @@ impl Display for BridgeError {
 impl std::error::Error for BridgeError {}
 
 ///
+/// Type for Island
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Island {
@@ -47,7 +52,7 @@ pub enum Island {
 ///
 /// Linear space:
 /// 0 is top left
-/// All even rows have one more column.
+/// All odd rows have one more column.
 ///
 #[derive(Clone, Debug)]
 pub struct HexSystem {
@@ -96,21 +101,24 @@ impl Display for HexSystem {
     }
 }
 
+pub struct GameParameters {
+    pub seed: u64,
+    pub max_columns: usize,
+    pub max_rows: usize,
+    pub num_islands: usize,
+    pub max_bridge_length: usize,
+    pub ratio_big_island: f64,
+    pub ratio_long_bridge: f64,
+}
+
 impl HexSystem {
-    pub fn generate_new(
-        seed: u64,
-        max_columns: usize,
-        max_rows: usize,
-        num_islands: usize,
-        max_bridge_length: usize,
-        _ratio_big_island: f64,
-        _ratio_long_bridge: f64,
-    ) -> Self {
-        let size = HexSystem::get_size(max_columns, max_rows);
+    pub fn generate_new(params: GameParameters) -> Self {
+        let size = HexSystem::get_size(params.max_columns, params.max_rows);
 
-        let mut rng = SmallRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(params.seed);
 
-        let mut indices = vec![Island::Empty; HexSystem::get_size(max_columns, max_rows)];
+        let mut indices =
+            vec![Island::Empty; HexSystem::get_size(params.max_columns, params.max_rows)];
         let mut start_index = rng.random_range(0..size);
         indices[start_index] = Island::Bridged(0);
         let mut bridges: BTreeMap<(usize, usize), HexBridge> = BTreeMap::new();
@@ -122,11 +130,11 @@ impl HexSystem {
             .iter()
             .filter(|i| matches!(i, Island::Bridged(_)))
             .count()
-            < num_islands
+            < params.num_islands
             && limit > 0
         {
             let direction = rng.random_range(0..6);
-            let mut bridge_length = rng.random_range(1..=max_bridge_length);
+            let mut bridge_length = rng.random_range(1..=params.max_bridge_length);
             let orig_bridge_length = bridge_length;
             let bridge_width = rng.random_range(1..=2);
 
@@ -138,32 +146,28 @@ impl HexSystem {
             let mut next_index = start_index;
             // Loop terminates at latest, when bridge length is reached.
             let end_index = loop {
-                let next_connections =
-                    HexSystem::get_connected_indices(max_columns, max_rows, next_index);
+                let next_connections = HexSystem::get_connected_indices(
+                    params.max_columns,
+                    params.max_rows,
+                    next_index,
+                );
                 // a)
                 if let Some(i) = next_connections[direction] {
                     next_index = i;
                 } else {
-                    // dbg!(next_index);
                     break next_index;
                 };
                 bridge_length -= 1;
-                // dbg!(bridge_length);
                 // b), c) and d)
                 if bridge_length == 0 || indices[next_index] != Island::Empty {
-                    // dbg!(next_index);
                     break next_index;
                 }
                 // Mark island as blank.
                 if orig_bridge_length > 1 {
-                    // dbg!(orig_bridge_length);
                     indices[next_index] = Island::Blocked;
                 }
-                // dbg!(next_index);
             };
             if start_index != end_index && indices[end_index] != Island::Blocked {
-                // dbg!(start_index);
-                // dbg!(end_index);
                 bridges
                     .entry((
                         std::cmp::min(start_index, end_index),
@@ -187,8 +191,6 @@ impl HexSystem {
                 indices[end_index] = Island::Bridged(0);
                 start_index = end_index;
             } else {
-                // let x = indices.iter().enumerate().filter_map(|(a,b)| if b.is_some() {Some(format!("{}:{:?}", a, b.clone().unwrap()))} else {None}).collect::<Vec<_>>();
-                // // dbg!(x);
                 limit -= 1;
             }
         }
@@ -197,11 +199,7 @@ impl HexSystem {
         bridges.iter_mut().for_each(|((i1, i2), bw)| {
             let mut apply = |i: usize| {
                 let is = &mut islands[i];
-                let width = match bw.state {
-                    BridgeState::Empty => 0,
-                    BridgeState::Partial => 1,
-                    BridgeState::Full => 2,
-                };
+                let width = bw.get_count();
                 *is = match is {
                     Island::Empty => Island::Bridged(width),
                     Island::Bridged(c) => Island::Bridged(*c + width),
@@ -214,8 +212,8 @@ impl HexSystem {
             bw.state = BridgeState::Empty;
         });
         // Fill bridges between existing islands that do not contribute to solution.
-        let bridges = HexSystem::fill_bridges(&islands, max_columns, max_rows);
-        let (columns, rows) = HexSystem::crop(&mut islands, max_columns, max_rows);
+        let bridges = HexSystem::fill_bridges(&islands, params.max_columns, params.max_rows);
+        let (columns, rows) = HexSystem::crop(&mut islands, params.max_columns, params.max_rows);
 
         HexSystem {
             columns,
@@ -290,7 +288,7 @@ impl HexSystem {
     ///
     /// Returns the new size (columns, rows)
     ///
-    fn crop(_islands: &mut Vec<Island>, max_columns: usize, max_rows: usize) -> (usize, usize) {
+    fn crop(_islands: &mut [Island], max_columns: usize, max_rows: usize) -> (usize, usize) {
         // TODO Implement
         (max_columns, max_rows)
     }
@@ -376,7 +374,7 @@ impl HexSystem {
     }
 
     ///
-    ///
+    /// Cycle through the states of bridge between `from` and `to`.
     ///
     pub fn cycle_bridge(&mut self, from: usize, to: usize) -> Result<bool, BridgeError> {
         let cur_bridge = (std::cmp::min(from, to), std::cmp::max(from, to));
@@ -396,11 +394,10 @@ impl HexSystem {
                 });
             if blocked {
                 Err(BridgeError::Blocked)
-            } else if let Some(bridge) = self.bridges.get_mut(&cur_bridge) {
+            } else {
+                let bridge = self.bridges.get_mut(&cur_bridge).unwrap(); // unwrap ok, since already checked above
                 bridge.cycle();
                 Ok(self.is_solved())
-            } else {
-                Err(BridgeError::NotFound)
             }
         } else {
             Err(BridgeError::NotFound)
@@ -408,7 +405,7 @@ impl HexSystem {
     }
 
     ///
-    ///
+    /// Get the bridge between `from` and `to`.
     ///
     pub fn get_bridge(&self, from: usize, to: usize) -> Option<&HexBridge> {
         self.bridges
@@ -426,7 +423,7 @@ impl HexSystem {
     }
 
     ///
-    ///
+    /// Get actual number of bridges for an island with index `from`.
     ///
     ///
     pub fn get_actual_bridges(&self, from: usize) -> usize {
@@ -442,7 +439,7 @@ impl HexSystem {
     }
 
     ///
-    ///
+    /// Check if game is solved.
     ///
     ///
     pub fn is_solved(&self) -> bool {
@@ -549,6 +546,8 @@ impl HexBridge {
 mod test {
     use std::collections::BTreeMap;
 
+    use crate::hex::{BridgeError, GameParameters};
+
     use super::{BridgeState, Island};
 
     use super::{HexBridge, HexSystem};
@@ -607,29 +606,61 @@ mod test {
 
     #[test]
     fn very_small_hashi() {
-        let hex = HexSystem::generate_new(1, 4, 5, 5, 2, 0.0, 0.0);
-        // // dbg!(&hex);
+        let params = GameParameters {
+            seed: 1,
+            max_columns: 4,
+            max_rows: 5,
+            num_islands: 5,
+            max_bridge_length: 2,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        };
+        let hex = HexSystem::generate_new(params);
         println!("{}", hex);
     }
 
     #[test]
     fn small_hashi() {
-        let hex = HexSystem::generate_new(1, 4, 5, 8, 3, 0.0, 0.0);
-        // // dbg!(&hex);
+        let params = GameParameters {
+            seed: 1,
+            max_columns: 4,
+            max_rows: 5,
+            num_islands: 8,
+            max_bridge_length: 3,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        };
+        let hex = HexSystem::generate_new(params);
         println!("{}", hex);
     }
 
     #[test]
     fn medium_hashi() {
-        let hex = HexSystem::generate_new(1, 15, 15, 28, 7, 0.0, 0.0);
-        // // dbg!(&hex);
+        let params = GameParameters {
+            seed: 1,
+            max_columns: 15,
+            max_rows: 15,
+            num_islands: 28,
+            max_bridge_length: 7,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        };
+        let hex = HexSystem::generate_new(params);
         println!("{}", hex);
     }
 
     #[test]
     fn random_hashi() {
-        let hex = HexSystem::generate_new(63, 10, 10, 40, 10, 0.0, 0.0);
-        // dbg!(&hex);
+        let params = GameParameters {
+            seed: 63,
+            max_columns: 10,
+            max_rows: 10,
+            num_islands: 40,
+            max_bridge_length: 10,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        };
+        let hex = HexSystem::generate_new(params);
         println!("{}", hex);
     }
 
@@ -719,7 +750,6 @@ mod test {
             bridges.keys().collect::<Vec<_>>(),
             vec![&(0usize, 2usize), &(0, 15), &(2, 3), &(3, 15)]
         );
-        dbg!(&bridges);
         assert!(bridges.values().all(|b| b.state == BridgeState::Empty));
     }
 
@@ -797,5 +827,112 @@ mod test {
             bridges,
         };
         assert!(!hex.is_solved());
+    }
+
+    #[test]
+    fn cycle_bridges_good() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[2] = Island::Bridged(1);
+        islands[3] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
+        let mut sys = HexSystem {
+            columns: 4,
+            rows: 5,
+            islands,
+            bridges,
+        };
+        let b = sys.get_bridge(0, 2);
+        assert!(b.is_some());
+        assert_eq!(b.unwrap().get_state(), &BridgeState::Empty);
+        let c = sys.cycle_bridge(0, 2);
+        assert!(c.is_ok());
+        assert_eq!(c.unwrap(), false);
+        let b = sys.get_bridge(0, 2);
+        assert!(b.is_some());
+        assert_eq!(b.unwrap().get_state(), &BridgeState::Partial);
+        assert_eq!(b.unwrap().get_count(), 1);
+    }
+
+    #[test]
+    fn cycle_bridges_blocked() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[4] = Island::Bridged(1);
+        islands[6] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
+        let mut sys = HexSystem {
+            columns: 4,
+            rows: 5,
+            islands,
+            bridges,
+        };
+        let c = sys.cycle_bridge(0, 15);
+        assert!(c.is_ok());
+        assert_eq!(c.unwrap(), false);
+        let b = sys.cycle_bridge(4, 6);
+        assert!(b.is_err());
+        assert_eq!(b.unwrap_err(), BridgeError::Blocked);
+    }
+
+    #[test]
+    fn cycle_bridges_not_found() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[4] = Island::Bridged(1);
+        islands[6] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
+        let mut sys = HexSystem {
+            columns: 4,
+            rows: 5,
+            islands,
+            bridges,
+        };
+        let b = sys.cycle_bridge(14, 15);
+        assert!(b.is_err());
+        assert_eq!(b.unwrap_err(), BridgeError::NotFound);
+    }
+
+    #[test]
+    fn bridge_not_found() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[4] = Island::Bridged(1);
+        islands[6] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
+        let sys = HexSystem {
+            columns: 4,
+            rows: 5,
+            islands,
+            bridges,
+        };
+        let c = sys.get_bridge(1, 3);
+        assert!(c.is_none());
+    }
+
+    #[test]
+    fn row_col() {
+        let mut islands = vec![Island::Empty; 22];
+        islands[0] = Island::Bridged(1);
+        islands[4] = Island::Bridged(1);
+        islands[6] = Island::Bridged(1);
+        islands[15] = Island::Bridged(1);
+        let bridges = HexSystem::fill_bridges(&islands, 4, 5);
+        let sys = HexSystem {
+            columns: 4,
+            rows: 5,
+            islands,
+            bridges,
+        };
+        let rc = sys.get_row_column_for_index(0);
+        assert_eq!(rc, (0, 0));
+        let rc = sys.get_row_column_for_index(21);
+        assert_eq!(rc, (4, 3));
+        let rc = sys.get_row_column_for_index(4);
+        assert_eq!(rc, (1, 0));
     }
 }
