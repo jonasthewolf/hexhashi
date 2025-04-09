@@ -12,7 +12,7 @@ use leptos::{
     logging::log,
     prelude::*,
 };
-use leptos_router::hooks::use_params_map;
+use leptos_router::hooks::use_params;
 use leptos_use::{UseMouseInElementReturn, use_event_listener, use_mouse_in_element};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
@@ -44,40 +44,30 @@ impl FromStr for Difficulty {
     type Err = DifficultyConversionError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Easy" => Ok(Difficulty::Easy),
-            "Medium" => Ok(Difficulty::Medium),
-            "Hard" => Ok(Difficulty::Hard),
-            "Extreme" => Ok(Difficulty::Extreme),
+        match s.to_lowercase().as_str() {
+            "easy" => Ok(Difficulty::Easy),
+            "medium" => Ok(Difficulty::Medium),
+            "hard" => Ok(Difficulty::Hard),
+            "extreme" => Ok(Difficulty::Extreme),
             _ => Err(DifficultyConversionError),
         }
     }
 }
 
-#[derive(Params, PartialEq)]
+#[derive(Params, Debug, PartialEq)]
 pub struct StartGameArgs {
     pub difficulty: Option<Difficulty>,
 }
 
 #[component]
 pub fn Game() -> impl IntoView {
-    let params = use_params_map();
-    let diff = move || params.read_untracked().get("difficulty");
+    
 
-    log!("{:?}", diff());
     let seed = window().performance().unwrap().now() as u64;
     log!("{}", seed);
 
-    // TODO Implement different difficulties
-    let params = GameParameters {
-        seed,
-        max_columns: 10,
-        max_rows: 10,
-        num_islands: 40,
-        max_bridge_length: 1,
-        ratio_big_island: 0.0,
-        ratio_long_bridge: 0.0,
-    };
+    let params = get_difficulty(seed);
+
     let game = Arc::new(RwLock::new(HexSystem::generate_new(params)));
 
     let canvas = NodeRef::<Canvas>::new();
@@ -125,7 +115,7 @@ pub fn Game() -> impl IntoView {
             match game.cycle_bridge(from, to) {
                 Ok(solved) => set_solved.set(solved),
                 Err(BridgeError::Blocked) => set_blocked.set(Some((from, to))),
-                Err(BridgeError::NotFound) => () // Ignore
+                Err(BridgeError::NotFound) => (), // Ignore
             }
         }
     });
@@ -149,15 +139,58 @@ pub fn Game() -> impl IntoView {
     }
 }
 
+fn get_difficulty(seed: u64) -> GameParameters {
+    let params = use_params::<StartGameArgs>();
+    match params.read_untracked().as_ref().ok().map(|p| p.difficulty.clone()).flatten() {
+        Some(Difficulty::Medium) => GameParameters {
+            seed,
+            max_columns: 10,
+            max_rows: 10,
+            num_islands: 20,
+            max_bridge_length: 3,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        },
+        Some(Difficulty::Hard) => GameParameters {
+            seed,
+            max_columns: 10,
+            max_rows: 10,
+            num_islands: 25,
+            max_bridge_length: 5,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        },
+        Some(Difficulty::Extreme) => GameParameters {
+            seed,
+            max_columns: 10,
+            max_rows: 10,
+            num_islands: 50,
+            max_bridge_length: 7,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        },
+        // Easy and errors
+        _ => GameParameters {
+            seed,
+            max_columns: 10,
+            max_rows: 10,
+            num_islands: 10,
+            max_bridge_length: 1,
+            ratio_big_island: 0.0,
+            ratio_long_bridge: 0.0,
+        },
+    }
+}
+
 ///
-///
+/// Draw grid and islands.
 ///
 ///
 fn draw(
     canvas: NodeRef<Canvas>,
     game: Arc<RwLock<HexSystem>>,
     bridge_update: ReadSignal<Option<(usize, usize)>>,
-    bridge_blocked: ReadSignal<Option<(usize,usize)>>,
+    bridge_blocked: ReadSignal<Option<(usize, usize)>>,
     background_color: Memo<Option<String>>,
 ) {
     // Resize to have sharp lines
@@ -216,7 +249,7 @@ const HOVER_BRIDGE: &str = "rgba(143, 188, 143, 0.2)";
 const HOVER_ISLAND: &str = "rgba(143, 188, 143, 0.50)";
 
 ///
-///
+/// Get bridge tuple for (x, y) coordinates within canvas.
 ///
 ///
 fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usize, usize)> {
@@ -231,7 +264,7 @@ fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usiz
 }
 
 ///
-///
+/// Get (x, y) coordinates within canvas for `index` of island.
 ///
 ///
 fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
@@ -249,7 +282,7 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 }
 
 ///
-///
+/// Draw the lines between islands and the bridges
 ///
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
@@ -259,7 +292,7 @@ fn draw_grid(
     is_outside: Signal<bool>,
     bridge_update: ReadSignal<Option<(usize, usize)>>,
     background_color: Memo<Option<String>>,
-    bridge_blocked: ReadSignal<Option<(usize,usize)>>,
+    bridge_blocked: ReadSignal<Option<(usize, usize)>>,
 ) {
     ctx.set_stroke_style_str(GRID_COLOR);
     ctx.set_line_width(0.5);
@@ -341,7 +374,7 @@ fn draw_grid(
             // );
             if (bridge_update.get() != Some((*start_index, *end_index))
                 && point_close_to_line(point, start, end, 10.0))
-                || highlighted_bridges.contains(&(*start_index, *end_index)) 
+                || highlighted_bridges.contains(&(*start_index, *end_index))
             {
                 ctx.begin_path();
                 ctx.set_line_width(10.0);
@@ -394,7 +427,7 @@ fn point_close_to_line(
 }
 
 ///
-///
+/// Draw islands, including highlighting.
 ///
 fn draw_islands(
     ctx: &CanvasRenderingContext2d,
