@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use hexhashi_logic::hex::{BridgeState, GameParameters, HexSystem, Island};
+use hexhashi_logic::hex::{BridgeError, BridgeState, GameParameters, HexSystem, Island};
 use leptos::{
     ev::{mousedown, mouseup},
     html::Canvas,
@@ -100,6 +100,7 @@ pub fn Game() -> impl IntoView {
 
     let (read_bridge, update_bridge) = signal(None);
     let (solved, set_solved) = signal(false);
+    let (blocked, set_blocked) = signal(None);
 
     let g = game.clone();
     let _ = use_event_listener(canvas, mousedown, move |evt| {
@@ -114,22 +115,23 @@ pub fn Game() -> impl IntoView {
 
     let _ = use_event_listener(canvas, mouseup, move |_| {
         update_bridge.set(None);
+        set_blocked.set(None);
     });
 
     let g = game.clone();
     Effect::new(move |_| {
         if let Some((from, to)) = read_bridge.get() {
             let mut game = g.write().unwrap();
-            let res = game.cycle_bridge(from, to);
-            if let Ok(solved) = res {
-                set_solved.set(solved);
+            match game.cycle_bridge(from, to) {
+                Ok(solved) => set_solved.set(solved),
+                Err(BridgeError::Blocked) => set_blocked.set(Some((from, to))),
+                Err(BridgeError::NotFound) => () // Ignore
             }
-            // TODO report error: maybe just by highlighting blocking bridge in red.
         }
     });
 
     Effect::new(move |_| {
-        draw(canvas, game.clone(), read_bridge, background_color);
+        draw(canvas, game.clone(), read_bridge, blocked, background_color);
     });
 
     view! {
@@ -154,7 +156,8 @@ pub fn Game() -> impl IntoView {
 fn draw(
     canvas: NodeRef<Canvas>,
     game: Arc<RwLock<HexSystem>>,
-    bridge_change: ReadSignal<Option<(usize, usize)>>,
+    bridge_update: ReadSignal<Option<(usize, usize)>>,
+    bridge_blocked: ReadSignal<Option<(usize,usize)>>,
     background_color: Memo<Option<String>>,
 ) {
     // Resize to have sharp lines
@@ -193,8 +196,9 @@ fn draw(
             element_x,
             element_y,
             is_outside,
-            bridge_change,
+            bridge_update,
             background_color,
+            bridge_blocked,
         );
 
         draw_islands(&ctx, &game, element_x, element_y, is_outside);
@@ -208,7 +212,7 @@ const GRID_COLOR: &str = "dimgrey";
 const ISLAND_COLOR: (&str, &str) = ("white", "black");
 const UNFINISHED_ISLAND_COLOR: (&str, &str) = ("gold", "dimgray");
 const FINISHED_ISLAND_COLOR: (&str, &str) = ("green", "white");
-const HOVER_BRIDGE: &str = "darkseagreen";
+const HOVER_BRIDGE: &str = "rgba(143, 188, 143, 0.2)";
 const HOVER_ISLAND: &str = "rgba(143, 188, 143, 0.50)";
 
 ///
@@ -255,6 +259,7 @@ fn draw_grid(
     is_outside: Signal<bool>,
     bridge_update: ReadSignal<Option<(usize, usize)>>,
     background_color: Memo<Option<String>>,
+    bridge_blocked: ReadSignal<Option<(usize,usize)>>,
 ) {
     ctx.set_stroke_style_str(GRID_COLOR);
     ctx.set_line_width(0.5);
@@ -336,11 +341,20 @@ fn draw_grid(
             // );
             if (bridge_update.get() != Some((*start_index, *end_index))
                 && point_close_to_line(point, start, end, 10.0))
-                || highlighted_bridges.contains(&(*start_index, *end_index))
+                || highlighted_bridges.contains(&(*start_index, *end_index)) 
             {
                 ctx.begin_path();
-                ctx.set_line_width(3.0);
+                ctx.set_line_width(10.0);
                 ctx.set_stroke_style_str(HOVER_BRIDGE);
+                ctx.move_to(start.0, start.1);
+                ctx.line_to(end.0, end.1);
+                ctx.stroke();
+            }
+            // Draw blocked bridge
+            if bridge_blocked.get() == Some((*start_index, *end_index)) {
+                ctx.begin_path();
+                ctx.set_line_width(6.0);
+                ctx.set_stroke_style_str("rgba(255.0,0.0,0.0,0.8");
                 ctx.move_to(start.0, start.1);
                 ctx.line_to(end.0, end.1);
                 ctx.stroke();
