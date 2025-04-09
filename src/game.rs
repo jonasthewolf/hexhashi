@@ -61,8 +61,6 @@ pub struct StartGameArgs {
 
 #[component]
 pub fn Game() -> impl IntoView {
-    
-
     let seed = window().performance().unwrap().now() as u64;
     log!("{}", seed);
 
@@ -141,7 +139,12 @@ pub fn Game() -> impl IntoView {
 
 fn get_difficulty(seed: u64) -> GameParameters {
     let params = use_params::<StartGameArgs>();
-    match params.read_untracked().as_ref().ok().map(|p| p.difficulty.clone()).flatten() {
+    match params
+        .read_untracked()
+        .as_ref()
+        .ok()
+        .and_then(|p| p.difficulty.clone())
+    {
         Some(Difficulty::Medium) => GameParameters {
             seed,
             max_columns: 10,
@@ -218,6 +221,52 @@ fn draw(
     } = use_mouse_in_element(canvas);
     // TODO throttle mouse move event?
 
+    let memo_game = game.clone();
+    let highlighted_bridges = Memo::new(move |_| {
+        // Highlight all bridges going to the island the mouse is pointing to.
+        let game = memo_game.read().unwrap();
+        let mut highlighted_bridges = vec![];
+        let point = (element_x.get(), element_y.get());
+        for (index, _) in game.islands.iter().enumerate() {
+            let (x, y) = get_coordinates_from_index(&game, index);
+            if ((x - point.0).powf(2.0) + (y - point.1).powf(2.0)).sqrt() <= ISLAND_SIZE
+                && !is_outside.get()
+            {
+                highlighted_bridges = game
+                    .get_connected_islands(index)
+                    .iter()
+                    .map(|to| (std::cmp::min(index, *to), std::cmp::max(index, *to)))
+                    .collect();
+                break;
+            }
+        }
+        // Highlight a bridge if mouse curser is close to it
+        for (start_index, end_index) in game.bridges.keys() {
+            let start = get_coordinates_from_index(&game, *start_index);
+            let end = get_coordinates_from_index(&game, *end_index);
+            if !is_outside.get() && point_close_to_line(point, start, end, 10.0) {
+                highlighted_bridges.push((*start_index, *end_index));
+            }
+        }
+        highlighted_bridges
+    });
+
+    let memo_game = game.clone();
+    let highlighted_islands = Memo::new(move |_| {
+        let game = memo_game.read().unwrap();
+        let mut highlighted_islands = vec![];
+        let point = (element_x.get(), element_y.get());
+        for (index, _) in game.islands.iter().enumerate() {
+            let (x, y) = get_coordinates_from_index(&game, index);
+            if ((x - point.0).powf(2.0) + (y - point.1).powf(2.0)).sqrt() <= ISLAND_SIZE
+                && !is_outside.get()
+            {
+                highlighted_islands.push(index);
+            }
+        }
+        highlighted_islands
+    });
+
     Effect::new(move |_| {
         ctx.clear_rect(0.0, 0.0, width, height);
 
@@ -226,15 +275,13 @@ fn draw(
         draw_grid(
             &ctx,
             &game,
-            element_x,
-            element_y,
-            is_outside,
             bridge_update,
             background_color,
             bridge_blocked,
+            highlighted_bridges,
         );
 
-        draw_islands(&ctx, &game, element_x, element_y, is_outside);
+        draw_islands(&ctx, &game, highlighted_islands);
     });
 }
 
@@ -287,12 +334,10 @@ fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
 fn draw_grid(
     ctx: &CanvasRenderingContext2d,
     game: &HexSystem,
-    mouse_x: Signal<f64>,
-    mouse_y: Signal<f64>,
-    is_outside: Signal<bool>,
     bridge_update: ReadSignal<Option<(usize, usize)>>,
     background_color: Memo<Option<String>>,
     bridge_blocked: ReadSignal<Option<(usize, usize)>>,
+    highlighted_bridges: Memo<Vec<(usize, usize)>>,
 ) {
     ctx.set_stroke_style_str(GRID_COLOR);
     ctx.set_line_width(0.5);
@@ -344,54 +389,90 @@ fn draw_grid(
         ctx.stroke();
     }
     // Draw hovering
-    let point = (mouse_x.get(), mouse_y.get());
-    if !is_outside.get() {
-        // Highlight all bridges going to the island the mouse is pointing to.
-        let mut highlighted_bridges = vec![];
-        for (index, _) in game.islands.iter().enumerate() {
-            let (x, y) = get_coordinates_from_index(game, index);
-            if ((x - point.0).powf(2.0) + (y - point.1).powf(2.0)).sqrt() <= ISLAND_SIZE
-                && !is_outside.get()
-            {
-                highlighted_bridges = game
-                    .get_connected_islands(index)
-                    .iter()
-                    .map(|to| (std::cmp::min(index, *to), std::cmp::max(index, *to)))
-                    .collect();
-            }
+    for (start_index, end_index) in game.bridges.keys() {
+        let start = get_coordinates_from_index(game, *start_index);
+        let end = get_coordinates_from_index(game, *end_index);
+        // log!(
+        //     "{} {} {:?} {:?} {:?} {}",
+        //     start_index,
+        //     end_index,
+        //     point,
+        //     start,
+        //     end,
+        //     point_close_to_line(point, start, end, 10.0)
+        // );
+        if bridge_update.get() != Some((*start_index, *end_index))
+            && highlighted_bridges
+                .get()
+                .contains(&(*start_index, *end_index))
+        {
+            ctx.begin_path();
+            ctx.set_line_width(10.0);
+            ctx.set_stroke_style_str(HOVER_BRIDGE);
+            ctx.move_to(start.0, start.1);
+            ctx.line_to(end.0, end.1);
+            ctx.stroke();
         }
-        for (start_index, end_index) in game.bridges.keys() {
-            let start = get_coordinates_from_index(game, *start_index);
-            let end = get_coordinates_from_index(game, *end_index);
-            // log!(
-            //     "{} {} {:?} {:?} {:?} {}",
-            //     start_index,
-            //     end_index,
-            //     point,
-            //     start,
-            //     end,
-            //     point_close_to_line(point, start, end, 10.0)
-            // );
-            if (bridge_update.get() != Some((*start_index, *end_index))
-                && point_close_to_line(point, start, end, 10.0))
-                || highlighted_bridges.contains(&(*start_index, *end_index))
-            {
+        // Draw blocked bridge
+        if bridge_blocked.get() == Some((*start_index, *end_index)) {
+            ctx.begin_path();
+            ctx.set_line_width(6.0);
+            ctx.set_stroke_style_str("rgba(255.0,0.0,0.0,0.8");
+            ctx.move_to(start.0, start.1);
+            ctx.line_to(end.0, end.1);
+            ctx.stroke();
+        }
+    }
+}
+
+///
+/// Draw islands, including highlighting.
+///
+fn draw_islands(
+    ctx: &CanvasRenderingContext2d,
+    game: &HexSystem,
+    highlighted_islands: Memo<Vec<usize>>,
+) {
+    for (index, island) in game.islands.iter().enumerate() {
+        if let Island::Bridged(target) = island {
+            let actual = game.get_actual_bridges(index);
+            let (island_color, text_color) = if actual == 0 {
+                ISLAND_COLOR
+            } else if actual != *target {
+                UNFINISHED_ISLAND_COLOR
+            } else {
+                FINISHED_ISLAND_COLOR
+            };
+            let (x, y) = get_coordinates_from_index(game, index);
+            ctx.begin_path();
+            ctx.arc(x, y, ISLAND_SIZE, 0.0, 2.0 * PI).unwrap();
+            ctx.set_fill_style_str(island_color);
+            ctx.fill();
+            ctx.set_line_width(3.0);
+            ctx.set_stroke_style_str("transparent");
+            ctx.stroke();
+
+            // Draw hovering
+            // Order of the two conditions is important here: If it was different, there is no update when moved within element.
+            if highlighted_islands.get().contains(&index) {
                 ctx.begin_path();
-                ctx.set_line_width(10.0);
-                ctx.set_stroke_style_str(HOVER_BRIDGE);
-                ctx.move_to(start.0, start.1);
-                ctx.line_to(end.0, end.1);
+                ctx.set_line_width(3.0);
+                ctx.set_stroke_style_str(HOVER_ISLAND);
+                ctx.arc(x, y, ISLAND_SIZE + 5.0, 0.0, 2.0 * PI).unwrap();
+                ctx.set_fill_style_str("transparent");
                 ctx.stroke();
             }
-            // Draw blocked bridge
-            if bridge_blocked.get() == Some((*start_index, *end_index)) {
-                ctx.begin_path();
-                ctx.set_line_width(6.0);
-                ctx.set_stroke_style_str("rgba(255.0,0.0,0.0,0.8");
-                ctx.move_to(start.0, start.1);
-                ctx.line_to(end.0, end.1);
-                ctx.stroke();
-            }
+            ctx.begin_path();
+            ctx.set_line_width(3.0);
+            ctx.set_stroke_style_str("transparent");
+            // Text
+            ctx.set_font("12pt Arial");
+            ctx.set_fill_style_str(text_color);
+            ctx.set_text_align("center");
+            ctx.set_text_baseline("middle");
+            // ctx.fill_text(&index.to_string(), x, y).unwrap();
+            ctx.fill_text(&target.to_string(), x, y).unwrap();
+            ctx.stroke();
         }
     }
 }
@@ -424,62 +505,6 @@ fn point_close_to_line(
     );
     let distance = ((point.0 - closest.0).powf(2.0) + (point.1 - closest.1).powf(2.0)).sqrt();
     distance < max_distance
-}
-
-///
-/// Draw islands, including highlighting.
-///
-fn draw_islands(
-    ctx: &CanvasRenderingContext2d,
-    game: &HexSystem,
-    mouse_x: Signal<f64>,
-    mouse_y: Signal<f64>,
-    is_outside: Signal<bool>,
-) {
-    for (index, island) in game.islands.iter().enumerate() {
-        if let Island::Bridged(target) = island {
-            let actual = game.get_actual_bridges(index);
-            let (island_color, text_color) = if actual == 0 {
-                ISLAND_COLOR
-            } else if actual != *target {
-                UNFINISHED_ISLAND_COLOR
-            } else {
-                FINISHED_ISLAND_COLOR
-            };
-            let (x, y) = get_coordinates_from_index(game, index);
-            ctx.begin_path();
-            ctx.arc(x, y, ISLAND_SIZE, 0.0, 2.0 * PI).unwrap();
-            ctx.set_fill_style_str(island_color);
-            ctx.fill();
-            ctx.set_line_width(3.0);
-            ctx.set_stroke_style_str("transparent");
-            ctx.stroke();
-
-            // Draw hovering
-            // Order of the two conditions is important here: If it was different, there is no update when moved within element.
-            if ((x - mouse_x.get()).powf(2.0) + (y - mouse_y.get()).powf(2.0)).sqrt() <= ISLAND_SIZE
-                && !is_outside.get()
-            {
-                ctx.begin_path();
-                ctx.set_line_width(3.0);
-                ctx.set_stroke_style_str(HOVER_ISLAND);
-                ctx.arc(x, y, ISLAND_SIZE + 5.0, 0.0, 2.0 * PI).unwrap();
-                ctx.set_fill_style_str("transparent");
-                ctx.stroke();
-            }
-            ctx.begin_path();
-            ctx.set_line_width(3.0);
-            ctx.set_stroke_style_str("transparent");
-            // Text
-            ctx.set_font("12pt Arial");
-            ctx.set_fill_style_str(text_color);
-            ctx.set_text_align("center");
-            ctx.set_text_baseline("middle");
-            // ctx.fill_text(&index.to_string(), x, y).unwrap();
-            ctx.fill_text(&target.to_string(), x, y).unwrap();
-            ctx.stroke();
-        }
-    }
 }
 
 #[cfg(test)]
