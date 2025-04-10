@@ -135,7 +135,6 @@ impl HexSystem {
         {
             let direction = rng.random_range(0..6);
             let mut bridge_length = *(1..params.max_bridge_length)
-                .into_iter()
                 .collect::<Vec<usize>>()
                 .as_slice()
                 .choose_weighted(&mut rng, |x| {

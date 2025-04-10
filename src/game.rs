@@ -21,6 +21,16 @@ use web_sys::CanvasRenderingContext2d;
 use leptos::Params;
 use leptos_router::params::Params;
 
+const LINE_HEIGHT: f64 = 50.0;
+const ISLAND_SIZE: f64 = 15.0;
+const BRIDGE_COLOR: &str = "dodgerblue";
+const GRID_COLOR: &str = "dimgrey";
+const ISLAND_COLOR: (&str, &str) = ("white", "black");
+const UNFINISHED_ISLAND_COLOR: (&str, &str) = ("gold", "dimgray");
+const FINISHED_ISLAND_COLOR: (&str, &str) = ("green", "white");
+const HOVER_BRIDGE: &str = "rgba(143, 188, 143, 0.2)";
+const HOVER_ISLAND: &str = "rgba(143, 188, 143, 0.50)";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Difficulty {
     Easy,
@@ -285,49 +295,6 @@ fn draw(
     });
 }
 
-const LINE_HEIGHT: f64 = 50.0;
-const ISLAND_SIZE: f64 = 15.0;
-const BRIDGE_COLOR: &str = "dodgerblue";
-const GRID_COLOR: &str = "dimgrey";
-const ISLAND_COLOR: (&str, &str) = ("white", "black");
-const UNFINISHED_ISLAND_COLOR: (&str, &str) = ("gold", "dimgray");
-const FINISHED_ISLAND_COLOR: (&str, &str) = ("green", "white");
-const HOVER_BRIDGE: &str = "rgba(143, 188, 143, 0.2)";
-const HOVER_ISLAND: &str = "rgba(143, 188, 143, 0.50)";
-
-///
-/// Get bridge tuple for (x, y) coordinates within canvas.
-///
-///
-fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usize, usize)> {
-    for (start_index, end_index) in game.bridges.keys() {
-        let start = get_coordinates_from_index(game, *start_index);
-        let end = get_coordinates_from_index(game, *end_index);
-        if point_close_to_line((x as f64, y as f64), start, end, 10.0) {
-            return Some((*start_index, *end_index));
-        }
-    }
-    None
-}
-
-///
-/// Get (x, y) coordinates within canvas for `index` of island.
-///
-///
-fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
-    let triangle_thigh: f64 = LINE_HEIGHT / (60.0 * PI / 180.0).sin();
-    let (row, column) = game.get_row_column_for_index(index);
-    let even_row = row % 2 == 0;
-    // log!("{} {} {} {} {} {}", index, game.islands.len(), game.columns, even_row, row, column);
-
-    let x = 75.0
-        + triangle_thigh
-        + column as f64 * triangle_thigh
-        + if even_row { 0.0 } else { -triangle_thigh * 0.5 };
-    let y = LINE_HEIGHT + row as f64 * LINE_HEIGHT;
-    (x, y)
-}
-
 ///
 /// Draw the lines between islands and the bridges
 ///
@@ -475,6 +442,39 @@ fn draw_islands(
             ctx.stroke();
         }
     }
+}
+
+///
+/// Get bridge tuple for (x, y) coordinates within canvas.
+///
+///
+fn get_bridge_from_coordinates(game: &HexSystem, x: i32, y: i32) -> Option<(usize, usize)> {
+    for (start_index, end_index) in game.bridges.keys() {
+        let start = get_coordinates_from_index(game, *start_index);
+        let end = get_coordinates_from_index(game, *end_index);
+        if point_close_to_line((x as f64, y as f64), start, end, 10.0) {
+            return Some((*start_index, *end_index));
+        }
+    }
+    None
+}
+
+///
+/// Get (x, y) coordinates within canvas for `index` of island.
+///
+///
+fn get_coordinates_from_index(game: &HexSystem, index: usize) -> (f64, f64) {
+    let triangle_thigh: f64 = LINE_HEIGHT / (60.0 * PI / 180.0).sin();
+    let (row, column) = game.get_row_column_for_index(index);
+    let even_row = row % 2 == 0;
+    // log!("{} {} {} {} {} {}", index, game.islands.len(), game.columns, even_row, row, column);
+
+    let x = 75.0
+        + triangle_thigh
+        + column as f64 * triangle_thigh
+        + if even_row { 0.0 } else { -triangle_thigh * 0.5 };
+    let y = LINE_HEIGHT + row as f64 * LINE_HEIGHT;
+    (x, y)
 }
 
 ///
