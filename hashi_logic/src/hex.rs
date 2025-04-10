@@ -134,7 +134,15 @@ impl HexSystem {
             && limit > 0
         {
             let direction = rng.random_range(0..6);
-            let mut bridge_length = rng.random_range(1..=params.max_bridge_length);
+            let mut bridge_length = *(1..params.max_bridge_length)
+                .into_iter()
+                .collect::<Vec<usize>>()
+                .as_slice()
+                .choose_weighted(&mut rng, |x| {
+                    params.ratio_big_island * params.max_bridge_length as f64
+                        / (*x as f64 * *x as f64 * params.ratio_long_bridge)
+                })
+                .unwrap_or(&1);
             let orig_bridge_length = bridge_length;
             let bridge_width = rng.random_range(1..=2);
 

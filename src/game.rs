@@ -152,7 +152,7 @@ fn get_difficulty(seed: u64) -> GameParameters {
             num_islands: 20,
             max_bridge_length: 3,
             ratio_big_island: 0.0,
-            ratio_long_bridge: 0.0,
+            ratio_long_bridge: 0.2,
         },
         Some(Difficulty::Hard) => GameParameters {
             seed,
@@ -161,7 +161,7 @@ fn get_difficulty(seed: u64) -> GameParameters {
             num_islands: 25,
             max_bridge_length: 5,
             ratio_big_island: 0.0,
-            ratio_long_bridge: 0.0,
+            ratio_long_bridge: 0.5,
         },
         Some(Difficulty::Extreme) => GameParameters {
             seed,
@@ -170,7 +170,7 @@ fn get_difficulty(seed: u64) -> GameParameters {
             num_islands: 50,
             max_bridge_length: 7,
             ratio_big_island: 0.0,
-            ratio_long_bridge: 0.0,
+            ratio_long_bridge: 1.0,
         },
         // Easy and errors
         _ => GameParameters {
@@ -180,7 +180,7 @@ fn get_difficulty(seed: u64) -> GameParameters {
             num_islands: 10,
             max_bridge_length: 1,
             ratio_big_island: 0.0,
-            ratio_long_bridge: 0.0,
+            ratio_long_bridge: 0.1,
         },
     }
 }
